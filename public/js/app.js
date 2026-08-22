@@ -37,7 +37,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setClearColor(0x000000, 1);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.16;
 stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -56,20 +56,26 @@ scene.add(rig);
 const ship = buildVictory();
 scene.add(ship);
 
-/* lighting — cold key from above, warm rim from aft */
-scene.add(new THREE.HemisphereLight(0xa8bcd8, 0x20242c, 1.25));
+/* Lighting rides with the camera. A world-fixed key leaves whichever face is
+   pointed at the viewer in shadow — the ventral station was rendering 4% lit
+   against 47% in the reference — so the key, fill and rim are all children of
+   the rig and every station is lit the same way. */
 
-const key = new THREE.DirectionalLight(0xeef4ff, 2.4);
-key.position.set(28, 46, 34);
-scene.add(key);
+scene.add(new THREE.HemisphereLight(0xc4d2e6, 0x8892a2, 3.0));
 
-const fill = new THREE.DirectionalLight(0x8496b4, 1.05);
-fill.position.set(-34, -22, -26);
-scene.add(fill);
+function rigLight(color, intensity, pos) {
+  const l = new THREE.DirectionalLight(color, intensity);
+  l.position.set(pos[0], pos[1], pos[2]);
+  l.target.position.set(0, 0, 0);
+  rig.add(l);
+  rig.add(l.target);
+  return l;
+}
 
-const rim = new THREE.DirectionalLight(0xff9b52, 0.95);
-rim.position.set(-52, 12, 8);
-scene.add(rim);
+// camera looks down its local -Z, so lights sit on the +Z side of the rig
+rigLight(0xf2f6ff, 1.35, [ 0.45,  0.85,  1.0]);  // key, high and slightly left
+rigLight(0xa8b8d2, 0.95, [-0.9,  -0.45,  0.8]);  // fill from the opposite side
+rigLight(0xff9b52, 0.55, [-0.4,   0.15, -1.0]);  // warm rim from behind
 
 /* --- station orientation maths -------------------------------------------- */
 

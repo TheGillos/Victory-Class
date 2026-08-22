@@ -87,7 +87,7 @@ const vOf = (z, sign) => (sign > 0 ? (z + HB) : (HB - z)) / SHIP.beam;
 
 function Builder() {
   return {
-    pos: [], uv: [], idx: [], groups: [], vOff: 0, iOff: 0,
+    pos: [], uv: [], idx: [], groups: [], spans: [], vOff: 0, iOff: 0,
 
     /** Add a quad grid. rows x cols vertices; verts(i, j) -> {x, y, z}. */
     grid(rows, cols, verts, sign, group) {
@@ -106,6 +106,7 @@ function Builder() {
           else          this.idx.push(a, c, b, b, c, d);
         }
       }
+      this.spans.push({ from: base, to: this.vOff + rows * cols, sign });
       this.vOff += rows * cols;
       this.iOff = this.idx.length;
       this.groups.push({ start, count: this.iOff - start, group });
@@ -125,6 +126,7 @@ function Builder() {
         if (flip) this.idx.push(base, base + 2 + j, base + 1 + j);
         else      this.idx.push(base, base + 1 + j, base + 2 + j);
       }
+      this.spans.push({ from: base, to: this.vOff + cols + 1, sign });
       this.vOff += cols + 1;
       this.iOff = this.idx.length;
       this.groups.push({ start, count: this.iOff - start, group });
@@ -137,6 +139,19 @@ function Builder() {
       g.setIndex(this.idx);
       for (const grp of this.groups) g.addGroup(grp.start, grp.count, grp.group);
       g.computeVertexNormals();
+
+      // A dorsal vertex must face up and a ventral one down. Winding across the
+      // shells, caps and nacelles is fiddly enough that it is worth asserting
+      // rather than trusting; an inverted ventral shell renders black.
+      const nrm = g.attributes.normal;
+      for (const sp of this.spans) {
+        for (let i = sp.from; i < sp.to; i++) {
+          if (nrm.getY(i) * sp.sign < 0) {
+            nrm.setXYZ(i, -nrm.getX(i), -nrm.getY(i), -nrm.getZ(i));
+          }
+        }
+      }
+      nrm.needsUpdate = true;
       return g;
     }
   };
@@ -263,7 +278,16 @@ function buildWireGeometry() {
   return g;
 }
 
-/* --- textures ------------------------------------------------------------- */
+/* --- triplanar surfacing ---------------------------------------------------
+
+   A single projection from overhead paints the flanks with whatever sits at the
+   outer edge of the plan view, which is shadow — the hull rendered black from
+   the beam. So each face samples the render that actually looks at it: dorsal
+   and ventral from above and below, the flanks from the side elevation, the
+   ends from the bow and stern renders, blended by the surface normal.
+--------------------------------------------------------------------------- */
+
+const VIEWS = ['dorsal', 'ventral', 'side', 'front', 'rear'];
 
 /** Isolate the warm pixels — engines, bussards, heat vanes — as an emissive map. */
 function emissiveFrom(image) {
@@ -289,20 +313,119 @@ function emissiveFrom(image) {
   return t;
 }
 
-function loadShellTexture(url, material, onReady) {
-  new THREE.TextureLoader().load(url, (tex) => {
-    tex.flipY = false;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 8;
-    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-    material.map = tex;
-    material.emissiveMap = emissiveFrom(tex.image);
-    material.emissive = new THREE.Color(0xffffff);
-    material.emissiveIntensity = 1.25;
-    material.color.setHex(0xffffff);
-    material.needsUpdate = true;
-    if (onReady) onReady();
+const TRIPLANAR_VERT_HEAD = `
+varying vec3 vShipPos;
+varying vec3 vShipNrm;
+`;
+
+const TRIPLANAR_VERT_BODY = `
+vShipPos = transformed;
+vShipNrm = normalize(objectNormal);
+`;
+
+const TRIPLANAR_FRAG_HEAD = `
+varying vec3 vShipPos;
+varying vec3 vShipNrm;
+uniform sampler2D mapDorsal;
+uniform sampler2D mapVentral;
+uniform sampler2D mapSide;
+uniform sampler2D mapFront;
+uniform sampler2D mapRear;
+uniform sampler2D emiDorsal;
+uniform sampler2D emiVentral;
+uniform sampler2D emiSide;
+uniform sampler2D emiFront;
+uniform sampler2D emiRear;
+uniform vec3 shipSize;      // length, height, beam
+uniform float blendSharp;
+uniform float viewBias;
+
+vec4 triplanar(sampler2D mDor, sampler2D mVen, sampler2D mSide,
+               sampler2D mFront, sampler2D mRear) {
+  vec3 p = vShipPos;
+  vec3 n = normalize(vShipNrm);
+
+  // The hull is a thin plate: seen from the beam, almost every normal still
+  // points up or down, so pure normal-space triplanar keeps sampling the plan
+  // view's shadowed rim. Lean the blend toward whichever render is looking at
+  // the hull right now — the ship sits at the origin, so the camera position
+  // is the view direction in ship space.
+  vec3 blend = normalize(mix(n, normalize(cameraPosition), viewBias));
+  vec3 w = pow(abs(blend), vec3(blendSharp));
+  w /= max(1e-4, w.x + w.y + w.z);
+
+  float u = (p.x + shipSize.x * 0.5) / shipSize.x;   // 0 at transom, 1 at bow
+  float vY = (shipSize.y * 0.5 - p.y) / shipSize.y;  // 0 at the dorsal skin
+  float zP = (p.z + shipSize.z * 0.5) / shipSize.z;
+
+  vec4 plan = mix(texture2D(mVen, vec2(u, 1.0 - zP)),
+                  texture2D(mDor, vec2(u, zP)), step(0.0, blend.y));
+  vec4 flank = texture2D(mSide, vec2(u, vY));
+  vec4 ends = mix(texture2D(mRear,  vec2(zP, vY)),
+                  texture2D(mFront, vec2(1.0 - zP, vY)), step(0.0, blend.x));
+
+  return w.y * plan + w.z * flank + w.x * ends;
+}
+`;
+
+function triplanarMaterial(uniforms) {
+  const m = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.62, metalness: 0.36,
+    emissive: new THREE.Color(0xffffff), emissiveIntensity: 1.3,
+    side: THREE.DoubleSide
   });
+
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+
+    shader.vertexShader = TRIPLANAR_VERT_HEAD + shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      '#include <project_vertex>\n' + TRIPLANAR_VERT_BODY
+    );
+
+    shader.fragmentShader = TRIPLANAR_FRAG_HEAD + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      'diffuseColor *= triplanar(mapDorsal, mapVentral, mapSide, mapFront, mapRear);'
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      'totalEmissiveRadiance *= triplanar(emiDorsal, emiVentral, emiSide, emiFront, emiRear).rgb;'
+    );
+  };
+
+  m.customProgramCacheKey = () => 'victory-triplanar';
+  return m;
+}
+
+function loadViewTextures(onReady) {
+  const uniforms = {
+    shipSize: { value: new THREE.Vector3(SHIP.length, SHIP.height, SHIP.beam) },
+    blendSharp: { value: 3.0 },
+    viewBias: { value: 0.78 }
+  };
+  const blank = new THREE.Texture();
+  for (const v of VIEWS) {
+    uniforms['map' + v[0].toUpperCase() + v.slice(1)] = { value: blank };
+    uniforms['emi' + v[0].toUpperCase() + v.slice(1)] = { value: blank };
+  }
+
+  let pending = VIEWS.length;
+  const loader = new THREE.TextureLoader();
+  for (const v of VIEWS) {
+    loader.load(`refs/tex-${v}.png`, (tex) => {
+      tex.flipY = false;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      const key = v[0].toUpperCase() + v.slice(1);
+      uniforms['map' + key].value = tex;
+      uniforms['emi' + key].value = emissiveFrom(tex.image);
+      if (--pending === 0 && onReady) onReady();
+    });
+  }
+  return uniforms;
 }
 
 /* --- build ---------------------------------------------------------------- */
@@ -311,14 +434,11 @@ export function buildVictory(onTexturesReady) {
   const root = new THREE.Group();
   root.name = 'USS_VICTORY';
 
-  const base = () => new THREE.MeshStandardMaterial({
-    color: 0x5b6169, roughness: 0.64, metalness: 0.38, side: THREE.DoubleSide
-  });
+  const uniforms = loadViewTextures(onTexturesReady);
+  const surface = triplanarMaterial(uniforms);
 
-  const matDorsal = base();
-  const matVentral = base();
-
-  const hull = new THREE.Mesh(buildHullGeometry(), [matDorsal, matVentral]);
+  // both geometry groups now share one surface; the shader picks the view
+  const hull = new THREE.Mesh(buildHullGeometry(), [surface, surface]);
   hull.name = 'hull';
   root.add(hull);
 
@@ -329,11 +449,6 @@ export function buildVictory(onTexturesReady) {
   wire.name = 'hull_wireframe';
   wire.visible = false;
   root.add(wire);
-
-  let pending = 2;
-  const done = () => { if (--pending === 0 && onTexturesReady) onTexturesReady(); };
-  loadShellTexture('refs/tex-dorsal.png', matDorsal, done);
-  loadShellTexture('refs/tex-ventral.png', matVentral, done);
 
   root.userData.setMode = function (mode) {
     const isWire = (mode === 'wireframe');

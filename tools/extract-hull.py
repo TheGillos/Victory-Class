@@ -87,6 +87,22 @@ def inpaint(rgb, mask):
     return Image.fromarray(a[idx[0], idx[1]])
 
 
+LEVEL = {}     # hull-mean luminance of each inpainted texture, dorsal first
+
+
+def match_level(rgb, mask, target):
+    """Scale a view so its hull reads at the same level as the dorsal render.
+    The renders were generated independently and differ by up to 40% in
+    exposure, which shows up as one station looking dim in the console."""
+    a = np.array(rgb).astype(np.float32)
+    lum = a[..., 0] * 0.3 + a[..., 1] * 0.59 + a[..., 2] * 0.11
+    mean = float(lum[mask].mean())
+    if target is None:
+        return rgb, mean
+    gain = min(2.0, max(0.5, target / max(1.0, mean)))
+    return Image.fromarray(np.clip(a * gain, 0, 255).astype(np.uint8)), mean
+
+
 def crop(path, out, size=None, fill=False):
     """Crop to the hull bounding box and carry the silhouette as alpha, so the
     shader can cut concave detail (the bow notch, the transom scoop) that a
@@ -101,6 +117,8 @@ def crop(path, out, size=None, fill=False):
     rgb = im.crop(box).convert('RGB')
     if fill:
         rgb = inpaint(rgb, sub)
+        rgb, mean = match_level(rgb, sub, LEVEL.get('dorsal'))
+        LEVEL.setdefault(out.split('tex-')[-1].split('.')[0], mean)
     rgb = rgb.resize((tw, th), Image.LANCZOS)
     out_im = rgb.convert('RGBA')
     if not fill:
@@ -113,14 +131,16 @@ a_top = crop('public/refs/topview.png',    'public/refs/tex-dorsal.png',  fill=T
 a_bot = crop('public/refs/bottomview.png', 'public/refs/tex-ventral.png', fill=True)
 crop('public/refs/topview.png',    'public/refs/still-dorsal.png')
 crop('public/refs/bottomview.png', 'public/refs/still-ventral.png')
-# elevation stills keep their own aspect; they are overlaid, not projected
+# Elevation views serve twice: as overlaid stills (alpha, own aspect) and as
+# triplanar textures for the faces pointing that way (inpainted, no alpha).
 for name, src in [('side', 'sideview'), ('front', 'frontview'), ('rear', 'rearview')]:
     m2, _ = hull_mask('public/refs/%s.png' % src)
     bx0, bx1, by0, by1 = bbox(m2)
     ar = (bx1 - bx0 + 1) / (by1 - by0 + 1)
-    crop('public/refs/%s.png' % src, 'public/refs/still-%s.png' % name,
-         (1600, max(1, int(round(1600 / ar)))))
-    print('still-%s aspect %.3f' % (name, ar))
+    size = (1600, max(1, int(round(1600 / ar))))
+    crop('public/refs/%s.png' % src, 'public/refs/still-%s.png' % name, size)
+    crop('public/refs/%s.png' % src, 'public/refs/tex-%s.png' % name, size, fill=True)
+    print('%-6s aspect %.3f' % (name, ar))
 print('cropped texture aspects  dorsal %.3f  ventral %.3f' % (a_top, a_bot))
 
 # ------------------------------------------------------------- emit ---------
