@@ -5,15 +5,33 @@ from scipy import ndimage
 N = 160          # stations along the hull
 TEXW, TEXH = 1280, 928
 
-def hull_mask(path, thr=26):
+DISK = np.array([[0,1,1,1,0],
+                 [1,1,1,1,1],
+                 [1,1,1,1,1],
+                 [1,1,1,1,1],
+                 [0,1,1,1,0]], bool)
+
+
+def hull_mask(path, thr=8):
+    """Silhouette of the ship. The renders carry deep shadow inside the hull
+    that a naive threshold reads as background, which shatters the mask into
+    hundreds of fragments — so threshold low, close the seams, then take the
+    largest component and fill it."""
     im = Image.open(path).convert('RGBA')
     a = np.array(im).astype(np.int32)
     lum = a[...,0]*0.3 + a[...,1]*0.59 + a[...,2]*0.11
     m = (lum > thr) & (a[...,3] > 40)
+    m = ndimage.binary_closing(m, DISK, iterations=2)
     lab, n = ndimage.label(m)
-    sizes = ndimage.sum(m, lab, range(1, n+1))
-    m = (lab == int(np.argmax(sizes)) + 1)
-    return ndimage.binary_fill_holes(m), im
+    if n == 0:
+        raise SystemExit('no silhouette found in ' + path)
+    sizes = ndimage.sum(m, lab, range(1, n + 1))
+    keep = int(np.argmax(sizes)) + 1
+    cover = sizes[keep - 1] / max(1, m.sum())
+    if cover < 0.9:
+        print('  WARNING %s: largest component covers only %.0f%% of the mask'
+              % (path.split('/')[-1], 100 * cover))
+    return ndimage.binary_fill_holes(lab == keep), im
 
 def bbox(m):
     ys, xs = np.where(m)
@@ -95,8 +113,14 @@ a_top = crop('public/refs/topview.png',    'public/refs/tex-dorsal.png',  fill=T
 a_bot = crop('public/refs/bottomview.png', 'public/refs/tex-ventral.png', fill=True)
 crop('public/refs/topview.png',    'public/refs/still-dorsal.png')
 crop('public/refs/bottomview.png', 'public/refs/still-ventral.png')
-crop('public/refs/sideview.png',   'public/refs/still-side.png',  (1600, int(round(1600 / 4.955))))
-crop('public/refs/frontview.png',  'public/refs/still-front.png', (1600, int(round(1600 / 4.560))))
+# elevation stills keep their own aspect; they are overlaid, not projected
+for name, src in [('side', 'sideview'), ('front', 'frontview'), ('rear', 'rearview')]:
+    m2, _ = hull_mask('public/refs/%s.png' % src)
+    bx0, bx1, by0, by1 = bbox(m2)
+    ar = (bx1 - bx0 + 1) / (by1 - by0 + 1)
+    crop('public/refs/%s.png' % src, 'public/refs/still-%s.png' % name,
+         (1600, max(1, int(round(1600 / ar)))))
+    print('still-%s aspect %.3f' % (name, ar))
 print('cropped texture aspects  dorsal %.3f  ventral %.3f' % (a_top, a_bot))
 
 # ------------------------------------------------------------- emit ---------

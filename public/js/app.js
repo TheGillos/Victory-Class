@@ -9,13 +9,17 @@ import { buildVictory, SHIP } from './victory-model.js';
 /* --- view stations -------------------------------------------------------- */
 /* dir = unit vector from the ship toward the camera; up orients the screen.  */
 
+/* `span` is the ship dimension that fills the frame at that station, so bow
+   and stern zoom in instead of leaving the hull tiny in the middle. */
 const STATIONS = {
-  starboard: { label: 'STARBOARD ELEVATION', dir: [ 0,  0,  1], up: [0,  1,  0] },
-  top:       { label: 'DORSAL PLAN',         dir: [ 0,  1,  0], up: [0,  0, -1] },
-  forward:   { label: 'BOW ASPECT',          dir: [ 1,  0,  0], up: [0,  1,  0] },
-  aft:       { label: 'STERN ASPECT',        dir: [-1,  0,  0], up: [0,  1,  0] },
-  ventral:   { label: 'VENTRAL PLAN',        dir: [ 0, -1,  0], up: [0,  0,  1] }
+  starboard: { label: 'STARBOARD ELEVATION', dir: [ 0,  0,  1], up: [0,  1,  0], span: 'length' },
+  top:       { label: 'DORSAL PLAN',         dir: [ 0,  1,  0], up: [0,  0, -1], span: 'length' },
+  forward:   { label: 'BOW ASPECT',          dir: [ 1,  0,  0], up: [0,  1,  0], span: 'beam'   },
+  aft:       { label: 'STERN ASPECT',        dir: [-1,  0,  0], up: [0,  1,  0], span: 'beam'   },
+  ventral:   { label: 'VENTRAL PLAN',        dir: [ 0, -1,  0], up: [0,  0,  1], span: 'length' }
 };
+
+const spanOf = (name) => STATIONS[name].span === 'beam' ? SHIP.beam : SHIP.length;
 
 /* the survey loop: always returning to the starboard beam between stations   */
 const SEQUENCE = [
@@ -95,7 +99,9 @@ const state = {
   to: QUAT.starboard.clone(),
   t: 1,            // 0..1 through the current transition
   holdUntil: 0,
-  mode: 'solid'
+  mode: 'solid',
+  fovFrom: 20,
+  fovTo: 20
 };
 
 rig.quaternion.copy(QUAT.starboard);
@@ -110,6 +116,8 @@ function goTo(name, { fromAuto = false } = {}) {
   hideStills();
   state.from.copy(rig.quaternion);
   state.to.copy(QUAT[name]);
+  state.fovFrom = camera.fov;
+  state.fovTo = fovFor(spanOf(name));
   state.current = name;
   state.t = 0;
   setViewLabel(name);
@@ -173,16 +181,22 @@ btnMode.addEventListener('click', () => {
 
 /* --- resize --------------------------------------------------------------- */
 
+/** Field of view that frames `span` metres across the stage. */
+function fovFor(span) {
+  const fitH = 2 * Math.atan((span * 0.54) / RADIUS);
+  const fitW = 2 * Math.atan((span * 0.54) / (RADIUS * camera.aspect));
+  return THREE.MathUtils.radToDeg(Math.max(fitH, fitW));
+}
+
 function resize() {
   const w = stage.clientWidth;
   const h = stage.clientHeight;
   if (!w || !h) return;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  // keep the whole 455m hull framed regardless of stage proportions
-  const fitH = 2 * Math.atan((SHIP.length * 0.54) / RADIUS);
-  const fitW = 2 * Math.atan((SHIP.length * 0.54) / (RADIUS * camera.aspect));
-  camera.fov = THREE.MathUtils.radToDeg(Math.max(fitH, fitW));
+  state.fovFrom = fovFor(spanOf(state.current));
+  state.fovTo = state.fovFrom;
+  camera.fov = state.fovFrom;
   camera.updateProjectionMatrix();
   layoutStills();
 }
@@ -252,7 +266,11 @@ function frame(now) {
   if (state.t < 1) {
     const wasRunning = state.t > 0;
     state.t = Math.min(1, state.t + dt / TRANSITION_MS);
-    rig.quaternion.slerpQuaternions(state.from, state.to, easeInOutCubic(state.t));
+    const k = easeInOutCubic(state.t);
+    rig.quaternion.slerpQuaternions(state.from, state.to, k);
+    camera.fov = state.fovFrom + (state.fovTo - state.fovFrom) * k;
+    camera.updateProjectionMatrix();
+    layoutStills();
     if (state.t >= 1) {
       if (state.auto) state.holdUntil = now + HOLD_MS;
       if (wasRunning) showStill(state.current);
