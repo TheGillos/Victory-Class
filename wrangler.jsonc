@@ -1,0 +1,9 @@
+{
+  // Static-assets-only Worker: no server code, just the console and its assets.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "victory-class",
+  "compatibility_date": "2026-08-22",
+  "assets": {
+    "directory": "./"
+  }
+}
