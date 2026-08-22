@@ -107,6 +107,7 @@ function easeInOutCubic(t) {
 function goTo(name, { fromAuto = false } = {}) {
   if (!STATIONS[name]) return;
   if (!fromAuto) stopAuto();
+  hideStills();
   state.from.copy(rig.quaternion);
   state.to.copy(QUAT[name]);
   state.current = name;
@@ -164,6 +165,8 @@ const btnMode = document.getElementById('btn-mode');
 btnMode.addEventListener('click', () => {
   state.mode = state.mode === 'solid' ? 'wireframe' : 'solid';
   ship.userData.setMode(state.mode);
+  hideStills();
+  if (state.mode === 'solid' && state.t >= 1) showStill(state.current);
   btnMode.textContent = state.mode === 'solid' ? 'LCARS WIREFRAME' : 'EXTERNAL VIEW';
   btnMode.classList.toggle('is-active', state.mode === 'wireframe');
 });
@@ -187,6 +190,34 @@ new ResizeObserver(resize).observe(stage);
 window.addEventListener('resize', resize);
 resize();
 
+/* --- orthographic stills -------------------------------------------------- */
+/* Once a station settles, cross-fade from the model to the rendered ortho for
+   that aspect. A scanline sweep covers the handoff so any silhouette mismatch
+   reads as a render effect. Bow and stern have no render yet, so they stay on
+   the model. */
+
+const stills = Array.from(document.querySelectorAll('.still'));
+const sweep = document.getElementById('sweep');
+const hasStill = (name) => stills.some((s) => s.dataset.view === name);
+
+function hideStills() {
+  for (const s of stills) s.classList.remove('shown');
+}
+
+function showStill(name) {
+  if (state.mode === 'wireframe') return;
+  const el = stills.find((s) => s.dataset.view === name);
+  if (!el) return;
+  sweep.classList.remove('run');
+  void sweep.offsetWidth;
+  sweep.classList.add('run');
+  setTimeout(() => {
+    if (state.current === name && state.t >= 1 && state.mode !== 'wireframe') {
+      el.classList.add('shown');
+    }
+  }, 190);
+}
+
 /* --- loop ----------------------------------------------------------------- */
 
 let last = performance.now();
@@ -196,16 +227,31 @@ function frame(now) {
   last = now;
 
   if (state.t < 1) {
+    const wasRunning = state.t > 0;
     state.t = Math.min(1, state.t + dt / TRANSITION_MS);
     rig.quaternion.slerpQuaternions(state.from, state.to, easeInOutCubic(state.t));
-    if (state.t >= 1 && state.auto) state.holdUntil = now + HOLD_MS;
+    if (state.t >= 1) {
+      if (state.auto) state.holdUntil = now + HOLD_MS;
+      if (wasRunning) showStill(state.current);
+    }
   } else if (state.auto && now >= state.holdUntil) {
     state.seqIndex = (state.seqIndex + 1) % SEQUENCE.length;
     goTo(SEQUENCE[state.seqIndex], { fromAuto: true });
   }
 
+  syncChrome();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
+}
+
+/* --- chrome sync ---------------------------------------------------------- */
+
+let lastSynced = null;
+function syncChrome() {
+  if (state.current === lastSynced) return;
+  lastSynced = state.current;
+  setViewLabel(state.current);
+  markActive(state.current);
 }
 
 /* --- boot ----------------------------------------------------------------- */
@@ -217,6 +263,7 @@ function dismissBoot() {
   booted = true;
   boot.classList.add('gone');
   startAuto();
+  showStill(state.current);
 }
 boot.addEventListener('click', dismissBoot);
 setTimeout(dismissBoot, 3000);

@@ -155,6 +155,7 @@ html, body {
 /* stage overlays */
 .overlay {
   position: absolute;
+  z-index: 5;
   color: var(--amber);
   font-size: calc(17 * var(--s));
   letter-spacing: calc(0.8 * var(--s));
@@ -254,3 +255,41 @@ html, body {
 #boot .prog  { width: calc(520 * var(--s)); height: calc(10 * var(--s)); background: #1b1726; margin-top: calc(18 * var(--s)); overflow: hidden; }
 #boot .prog i{ display: block; height: 100%; width: 0; background: var(--orange); animation: fill 2.4s cubic-bezier(.5,0,.2,1) forwards; }
 @keyframes fill { to { width: 100%; } }
+
+
+/* --- orthographic beauty stills ------------------------------------------- */
+
+#stills { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.still {
+  position: absolute;
+  inset: calc(74 * var(--s));
+  width: calc(100% - 148 * var(--s));
+  height: calc(100% - 148 * var(--s));
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 320ms ease;
+}
+.still.shown { opacity: 1; }
+
+/* scanline sweep that masks the model-to-render handoff */
+#sweep {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  opacity: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(255,162,76,0.00) 42%,
+    rgba(255,162,76,0.55) 50%,
+    rgba(255,162,76,0.00) 58%,
+    transparent 100%);
+  background-size: 100% 220%;
+}
+#sweep.run { animation: sweep 620ms cubic-bezier(.4,0,.3,1); }
+@keyframes sweep {
+  0%   { opacity: 0;   background-position: 0 -110%; }
+  18%  { opacity: 1; }
+  100% { opacity: 0;   background-position: 0 110%; }
+}

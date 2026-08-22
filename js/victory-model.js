@@ -1,317 +1,252 @@
 /* ==========================================================================
-   USS VICTORY NCC-9754-A — procedural hull
-   Units: 1 unit = 10 metres. Length 45.5, beam 28.0, height ~4.9.
-   Orientation: nose +X, dorsal +Y, starboard +Z.
+   USS VICTORY NCC-9754-A — hull lofted from the reference orthographics
 
-   The hull is one continuous lifting-body outline — the nacelle cowlings are
-   bulges on that outline, not separate wings — with raised cowling caps above
-   and below. Plating comes from a canvas texture planar-projected from above,
-   so the dorsal and ventral survey stations carry the detail.
+   Geometry comes from js/hull-data.js, which tools/extract-hull.py measures
+   directly off refs/topview.png and refs/sideview.png. Station 0 is the STERN
+   — the blunt armoured transom carrying the AID impulse blocks — and station
+   N is the bow, which tapers to the notched prow housing the pulse cannons.
+   Maximum beam falls about 40% forward of the transom.
+
+   The dorsal and ventral shells are separate material groups so each can
+   carry its own orthographic render as a planar-projected texture, with an
+   emissive map derived from the warm pixels so the engines and heat vanes
+   actually glow.
+
+   Orientation: bow +X, dorsal +Y, starboard +Z. 1 unit = 10 metres.
    ========================================================================== */
 
 import * as THREE from '../vendor/three.module.min.js';
+import { HULL } from './hull-data.js';
 
 export const SHIP = { length: 45.5, beam: 28.0, height: 4.9 };
 
-const PAL = {
-  hull:     0x767d86,
-  hullDark: 0x0b0a09,
-  seam:     0x3a4048,
-  panel:    0x2b3037,
-  wire:     0xffa24c,
-  ember:    0xff3b1c,
-  bussard:  0xff2d16,
-  vane:     0xd9761c
-};
+const SPAN_SEGMENTS = 48;
+const CHINE_SHARPNESS = 0.30;   // lower = flatter deck, harder chine
 
-/* --- plan outline --------------------------------------------------------- */
-/* Half-outline, bow to stern down the starboard side. Beam peaks aft of
-   midships; the transom scoops inboard between the two impulse blocks.       */
+/* --- section helpers ------------------------------------------------------ */
 
-const HULL_HALF = [
-  [ 22.75,  0.00],
-  [ 21.90,  1.70],
-  [ 20.10,  3.60],
-  [ 17.30,  5.70],
-  [ 13.80,  7.80],
-  [  9.80,  9.70],
-  [  5.40, 11.30],
-  [  0.60, 12.60],
-  [ -4.80, 13.50],
-  [-10.20, 13.95],
-  [-16.00, 14.00],
-  [-20.00, 13.80],
-  [-22.75, 13.40],
-  [-22.75,  9.90],
-  [-20.90,  8.90],
-  [-19.60,  6.60],
-  [-19.10,  3.80],
-  [-19.90,  1.60],
-  [-20.60,  0.00]
-];
+const L = SHIP.length, HB = SHIP.beam / 2, HH = SHIP.height / 2;
+const N = HULL.n;
 
-/* Raised nacelle cowling, sitting on the outboard shoulders. */
-const COWL_HALF = [
-  [  6.40,  9.60],
-  [  8.60, 11.10],
-  [  8.20, 13.20],
-  [ -16.0, 13.60],
-  [-22.60, 13.00],
-  [-22.60,  9.60]
-];
+const xAt = (i) => -L / 2 + (i / N) * L;               // station 0 = stern, N = bow
+const zAt = (i, s) => (s >= 0 ? HULL.zPos[i] : HULL.zNeg[i]) * s * HB;
+const yTop = (i) => HULL.yUp[i] * HH;
+const yBot = (i) => -HULL.yDn[i] * HH;
+const yChine = (i) => (yTop(i) + yBot(i)) / 2;
 
-/* --- helpers -------------------------------------------------------------- */
+/** Spanwise fullness: 1 on the centreline, 0 at the chine. */
+const bulge = (a) => Math.pow(Math.max(0, 1 - a * a), CHINE_SHARPNESS);
 
-function shapeFrom(points) {
-  const s = new THREE.Shape();
-  s.moveTo(points[0][0], points[0][1]);
-  for (let i = 1; i < points.length; i++) s.lineTo(points[i][0], points[i][1]);
-  s.closePath();
-  return s;
-}
+/* --- shell construction --------------------------------------------------- */
 
-function mirrorY(half) {
-  const out = half.slice();
-  for (let i = half.length - 2; i >= 1; i--) out.push([half[i][0], -half[i][1]]);
-  return out;
-}
+function shell(sign) {
+  const M = SPAN_SEGMENTS;
+  const pos = [], uv = [], idx = [];
 
-function slab(points, depth, bevel) {
-  const geo = new THREE.ExtrudeGeometry(shapeFrom(points), {
-    depth, bevelEnabled: true,
-    bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 4
-  });
-  geo.rotateX(-Math.PI / 2);
-  geo.translate(0, -depth / 2, 0);
-  return geo;
-}
-
-function smoothstep(a, b, x) {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
-
-/** Squeeze toward a knife edge at the bow and thin the outboard shoulders. */
-function sculpt(geo, fore) {
-  const p = geo.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), z = p.getZ(i);
-    const nose = 0.16 + 0.84 * smoothstep(fore, fore - 20, x);
-    const edge = 0.45 + 0.55 * smoothstep(14.0, 8.0, Math.abs(z));
-    p.setY(i, p.getY(i) * nose * edge);
+  for (let i = 0; i <= N; i++) {
+    const x = xAt(i);
+    const yc = yChine(i);
+    const yEdge = sign > 0 ? yTop(i) : yBot(i);
+    for (let j = 0; j <= M; j++) {
+      const s = (j / M) * 2 - 1;
+      const z = zAt(i, s);
+      const y = yc + (yEdge - yc) * bulge(Math.abs(s));
+      pos.push(x, y, z);
+      // planar projection from directly above (dorsal) or below (ventral)
+      const u = (x + L / 2) / L;
+      const v = sign > 0 ? (z + HB) / SHIP.beam : (HB - z) / SHIP.beam;
+      uv.push(u, v);
+    }
   }
-  p.needsUpdate = true;
+
+  const row = M + 1;
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < M; j++) {
+      const a = i * row + j, b = a + 1, c = a + row, d = c + 1;
+      if (sign > 0) { idx.push(a, b, c, b, d, c); }
+      else          { idx.push(a, c, b, b, c, d); }
+    }
+  }
+  return { pos, uv, idx, count: (N + 1) * row };
+}
+
+/** Fan cap closing an open section at station i. */
+function cap(i, sign) {
+  const baseIndex = 0;
+  const M = SPAN_SEGMENTS;
+  const pos = [], uv = [], idx = [];
+  const x = xAt(i), yc = yChine(i);
+
+  pos.push(x, yc, 0);
+  uv.push((x + L / 2) / L, 0.5);
+
+  for (let j = 0; j <= M; j++) {
+    const s = (j / M) * 2 - 1;
+    const z = zAt(i, s);
+    const a = Math.abs(s);
+    const yE = (yTop(i) + yBot(i)) / 2 + (yTop(i) - yBot(i)) / 2 * (sign > 0 ? bulge(a) : -bulge(a));
+    pos.push(x, yE, z);
+    uv.push((x + L / 2) / L, (z + HB) / SHIP.beam);
+  }
+  for (let j = 0; j < M; j++) {
+    const flip = (i === 0) === (sign > 0);
+    if (flip) idx.push(baseIndex, baseIndex + 2 + j, baseIndex + 1 + j);
+    else      idx.push(baseIndex, baseIndex + 1 + j, baseIndex + 2 + j);
+  }
+  return { pos, uv, idx, count: M + 2 };
+}
+
+function buildHullGeometry() {
+  const dorsal = shell(+1);
+  const ventral = shell(-1);
+
+  const pos = [], uv = [], idx = [];
+  const groups = [];
+  let vOff = 0, iOff = 0;
+
+  function append(part, group) {
+    pos.push(...part.pos);
+    uv.push(...part.uv);
+    for (const k of part.idx) idx.push(k + vOff);
+    groups.push({ start: iOff, count: part.idx.length, group });
+    vOff += part.count;
+    iOff += part.idx.length;
+  }
+
+  append(dorsal, 0);
+  append(ventral, 1);
+  // close the armoured transom and the tail
+  append(cap(0, +1), 0);
+  append(cap(0, -1), 1);
+  append(cap(N, +1), 0);
+  append(cap(N, -1), 1);
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  for (const g of groups) geo.addGroup(g.start, g.count, g.group);
   geo.computeVertexNormals();
   return geo;
 }
 
-/** Planar projection from directly above — the plating reads as a decal. */
-function planarUV(geo) {
-  const p = geo.attributes.position;
-  const uv = new Float32Array(p.count * 2);
-  for (let i = 0; i < p.count; i++) {
-    uv[i * 2]     = (p.getX(i) + SHIP.length / 2) / SHIP.length;
-    uv[i * 2 + 1] = (p.getZ(i) + SHIP.beam / 2) / SHIP.beam;
+/* --- technical wireframe -------------------------------------------------- */
+
+function buildWireGeometry() {
+  const pts = [];
+  const push = (a, b) => pts.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+  const P = (i, s, sign) => {
+    const x = xAt(i), yc = yChine(i);
+    const yE = sign > 0 ? yTop(i) : yBot(i);
+    return [x, yc + (yE - yc) * bulge(Math.abs(s)), zAt(i, s)];
+  };
+
+  // chine — the plan outline
+  for (let i = 0; i < N; i++) {
+    push(P(i, 1, 1), P(i + 1, 1, 1));
+    push(P(i, -1, 1), P(i + 1, -1, 1));
   }
-  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  return geo;
-}
-
-/* --- plating texture ------------------------------------------------------ */
-
-function platingTexture() {
-  const W = 2048, H = 1260;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const g = c.getContext('2d');
-
-  g.fillStyle = '#7d858f';
-  g.fillRect(0, 0, W, H);
-
-  // irregular plate field
-  let rnd = 20259;
-  const rand = () => (rnd = (rnd * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-
-  for (let row = 0; row < 44; row++) {
-    const y = (row / 44) * H;
-    const h = H / 44;
-    let x = -rand() * 160;
-    while (x < W) {
-      const w = 70 + rand() * 190;
-      const v = 0.86 + rand() * 0.26;
-      const base = Math.round(126 * v);
-      g.fillStyle = `rgb(${base},${base + 6},${base + 13})`;
-      g.fillRect(x, y, w - 2, h - 2);
-      x += w;
+  // longitudinals
+  for (const s of [-0.82, -0.55, -0.28, 0, 0.28, 0.55, 0.82]) {
+    for (const sign of [1, -1]) {
+      for (let i = 0; i < N; i++) push(P(i, s, sign), P(i + 1, s, sign));
     }
   }
-
-  // seams
-  g.strokeStyle = 'rgba(52,58,66,0.55)';
-  g.lineWidth = 1.5;
-  for (let row = 0; row <= 44; row++) {
-    const y = (row / 44) * H;
-    g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+  // frames
+  for (let i = 0; i <= N; i += 8) {
+    for (const sign of [1, -1]) {
+      for (let j = 0; j < SPAN_SEGMENTS; j++) {
+        const s0 = (j / SPAN_SEGMENTS) * 2 - 1;
+        const s1 = ((j + 1) / SPAN_SEGMENTS) * 2 - 1;
+        push(P(i, s0, sign), P(i, s1, sign));
+      }
+    }
   }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  return g;
+}
 
-  // heavier structural frames, fore to aft
-  g.strokeStyle = 'rgba(40,45,52,0.6)';
-  for (let i = 1; i < 34; i++) {
-    const x = (i / 34) * W + (rand() - 0.5) * 22;
-    g.lineWidth = (i % 4 === 0) ? 3 : 1.4;
-    const y0 = (i % 3 === 0) ? H * 0.18 : 0;
-    const y1 = (i % 5 === 0) ? H * 0.82 : H;
-    g.beginPath(); g.moveTo(x, y0); g.lineTo(x, y1); g.stroke();
+/* --- textures ------------------------------------------------------------- */
+
+/** Isolate the warm pixels — engines, bussards, heat vanes — as an emissive map. */
+function emissiveFrom(image) {
+  const c = document.createElement('canvas');
+  c.width = image.width; c.height = image.height;
+  const g = c.getContext('2d');
+  g.drawImage(image, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height);
+  const p = d.data;
+  for (let k = 0; k < p.length; k += 4) {
+    const r = p[k], gg = p[k + 1], b = p[k + 2];
+    const warm = (r > 105 && r - b > 45 && r - gg > 20);
+    if (warm) {
+      const f = Math.min(1, (r - b) / 140);
+      p[k] = r * f; p[k + 1] = gg * f * 0.8; p[k + 2] = b * f * 0.5;
+    } else {
+      p[k] = p[k + 1] = p[k + 2] = 0;
+    }
   }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.flipY = false;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
-  // greebles
-  for (let i = 0; i < 320; i++) {
-    const x = rand() * W, y = rand() * H;
-    const w = 8 + rand() * 46, h = 5 + rand() * 16;
-    g.fillStyle = rand() > 0.72 ? 'rgba(52,58,66,0.7)' : 'rgba(196,204,214,0.35)';
-    g.fillRect(x, y, w, h);
-  }
-
-  // painted amber accent strips
-  g.fillStyle = '#c8761f';
-  for (const [x, y, w, h] of [
-    [860, 300, 260, 13], [886, 322, 260, 13], [912, 344, 260, 13],
-    [860, 916, 260, 13], [886, 894, 260, 13], [912, 872, 260, 13],
-    [1180, 250, 190, 11], [1180, 268, 190, 11],
-    [1180, 992, 190, 11], [1180, 974, 190, 11]
-  ]) g.fillRect(x, y, w, h);
-
-  // registry
-  g.save();
-  g.fillStyle = 'rgba(58,64,72,0.9)';
-  g.font = 'bold 78px Arial, sans-serif';
-  g.translate(1180, 430); g.rotate(-0.06);
-  g.fillText('NCC-9754-A', 0, 0);
-  g.restore();
-
-  g.save();
-  g.fillStyle = 'rgba(58,64,72,0.9)';
-  g.font = 'bold 78px Arial, sans-serif';
-  g.translate(1180, 880); g.rotate(0.06);
-  g.fillText('NCC-9754-A', 0, 0);
-  g.restore();
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.flipY = false;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
+function loadShellTexture(url, material, onReady) {
+  new THREE.TextureLoader().load(url, (tex) => {
+    tex.flipY = false;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    material.map = tex;
+    material.transparent = false;
+    material.alphaTest = 0.5;   // the crops carry the hull silhouette in their alpha channel
+    material.emissiveMap = emissiveFrom(tex.image);
+    material.emissive = new THREE.Color(0xffffff);
+    material.emissiveIntensity = 1.25;
+    material.color.setHex(0xffffff);
+    material.needsUpdate = true;
+    if (onReady) onReady();
+  });
 }
 
 /* --- build ---------------------------------------------------------------- */
 
-export function buildVictory() {
+export function buildVictory(onTexturesReady) {
   const root = new THREE.Group();
   root.name = 'USS_VICTORY';
 
-  const plating = platingTexture();
+  const base = () => new THREE.MeshStandardMaterial({
+    color: 0x5b6169, roughness: 0.66, metalness: 0.36, side: THREE.DoubleSide
+  });
 
-  const MAT = {
-    hull: new THREE.MeshStandardMaterial({
-      color: 0xffffff, map: plating, roughness: 0.62, metalness: 0.38
-    }),
-    trim: new THREE.MeshStandardMaterial({
-      color: PAL.panel, roughness: 0.8, metalness: 0.3
-    }),
-    ember:   new THREE.MeshBasicMaterial({ color: PAL.ember }),
-    bussard: new THREE.MeshBasicMaterial({ color: PAL.bussard }),
-    vane:    new THREE.MeshBasicMaterial({ color: PAL.vane }),
-    line:    new THREE.LineBasicMaterial({ color: PAL.wire, transparent: true, opacity: 1.0 })
-  };
+  const matDorsal = base();
+  const matVentral = base();
 
-  const glows = [];
-  const edgeLines = [];
+  const hull = new THREE.Mesh(buildHullGeometry(), [matDorsal, matVentral]);
+  hull.name = 'hull';
+  root.add(hull);
 
-  function addSurface(geo, mat, name, withEdges = true) {
-    planarUV(geo);
-    const m = new THREE.Mesh(geo, mat);
-    m.name = name;
-    root.add(m);
-    if (withEdges) {
-      const ln = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 26), MAT.line);
-      ln.name = name + '_edges';
-      ln.visible = false;
-      edgeLines.push(ln);
-      root.add(ln);
-    }
-    return m;
-  }
+  const wireMat = new THREE.LineBasicMaterial({
+    color: 0xffa24c, transparent: true, opacity: 0.9
+  });
+  const wire = new THREE.LineSegments(buildWireGeometry(), wireMat);
+  wire.name = 'hull_wireframe';
+  wire.visible = false;
+  root.add(wire);
 
-  function addGlow(geo, mat, pos, name) {
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(pos[0], pos[1], pos[2]);
-    m.name = name;
-    root.add(m);
-    glows.push(m);
-    return m;
-  }
-
-  /* main lifting body */
-  addSurface(sculpt(slab(mirrorY(HULL_HALF), 3.4, 0.85), 22.75), MAT.hull, 'hull');
-
-  /* nacelle cowlings, dorsal and ventral, port and starboard */
-  for (const side of [1, -1]) {
-    for (const y of [1.05, -1.05]) {
-      const pts = COWL_HALF.map(([x, z]) => [x, z * side]);
-      const geo = slab(side === 1 ? pts : pts.slice().reverse(), 2.1, 0.55);
-      sculpt(geo, 9.5);
-      geo.translate(0, y, 0);
-      addSurface(geo, MAT.hull, `cowl_${side}_${y > 0 ? 'd' : 'v'}`);
-    }
-  }
-
-  /* dorsal command module */
-  addSurface(new THREE.BoxGeometry(6.4, 1.0, 4.6).translate(4.2, 1.62, 0), MAT.hull, 'cic_module');
-
-  /* aft prong assembly — probe silos and the aft launcher */
-  for (const z of [-2.9, -1.5, 1.5, 2.9]) {
-    addSurface(new THREE.BoxGeometry(4.2, 0.46, 0.46).translate(-21.9, 0.25, z), MAT.hull, 'prong_' + z);
-  }
-
-  /* AID impulse blocks — aft outboard, the red glow */
-  for (const side of [1, -1]) {
-    for (const z of [10.5, 12.6]) {
-      addGlow(new THREE.BoxGeometry(3.2, 3.0, 2.15), MAT.ember,
-        [-22.3, 0.0, side * z], `aid_${side}_${z}`);
-    }
-    addGlow(new THREE.BoxGeometry(1.6, 1.9, 1.7), MAT.ember,
-      [-20.4, -0.05, side * 3.0], `aid_centre_${side}`);
-  }
-
-  /* bussard collectors — forward ends of the cowlings */
-  for (const side of [1, -1]) {
-    addGlow(new THREE.BoxGeometry(1.6, 1.8, 1.6), MAT.bussard,
-      [8.20, 0.0, side * 11.3], `bussard_${side}`);
-  }
-
-  /* thermal radiator vanes */
-  addGlow(new THREE.BoxGeometry(19.0, 0.22, 0.55), MAT.vane, [-6.0, 1.36, 0], 'radiator_spine');
-  for (const side of [1, -1]) {
-    addGlow(new THREE.BoxGeometry(19.0, 0.20, 0.34), MAT.vane, [-6.0, 1.32, side * 1.15], `radiator_spine_${side}`);
-  }
-  for (const side of [1, -1]) {
-    addGlow(new THREE.BoxGeometry(11.5, 0.18, 0.42), MAT.vane,
-      [-8.0, 2.16, side * 11.4], `radiator_cowl_${side}`);
-  }
-
-  /* ------------------------------------------------------------------------ */
+  let pending = 2;
+  const done = () => { if (--pending === 0 && onTexturesReady) onTexturesReady(); };
+  loadShellTexture('refs/tex-dorsal.png', matDorsal, done);
+  loadShellTexture('refs/tex-ventral.png', matVentral, done);
 
   root.userData.setMode = function (mode) {
-    const wire = (mode === 'wireframe');
-    MAT.hull.map = wire ? null : plating;
-    MAT.hull.color.setHex(wire ? PAL.hullDark : PAL.hull);
-    MAT.hull.metalness = wire ? 0.0 : 0.42;
-    MAT.hull.roughness = wire ? 1.0 : 0.66;
-    MAT.hull.needsUpdate = true;
-    MAT.trim.color.setHex(wire ? PAL.hullDark : PAL.panel);
-    for (const ln of edgeLines) ln.visible = wire;
+    const isWire = (mode === 'wireframe');
+    hull.visible = !isWire;
+    wire.visible = isWire;
   };
 
-  root.userData.glows = glows;
+  root.userData.hull = hull;
   return root;
 }
