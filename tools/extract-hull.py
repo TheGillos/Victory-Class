@@ -26,7 +26,7 @@ def smooth(v, k=5):
     return np.convolve(pad, ker, mode='same')[k:-k]
 
 # ---------------------------------------------------------------- plan ------
-mt, imt = hull_mask('refs/topview.png')
+mt, imt = hull_mask('public/refs/topview.png')
 tx0, tx1, ty0, ty1 = bbox(mt)
 TH = ty1 - ty0 + 1
 tmid = (ty0 + ty1) / 2.0
@@ -44,7 +44,7 @@ zpos[0] = zneg[0] = max(zpos[0], zneg[0]) * 0.99   # square off the blunt bow
 zpos[-1] = max(zpos[-1], 0.02); zneg[-1] = max(zneg[-1], 0.02)
 
 # ------------------------------------------------------------- profile ------
-ms, _ = hull_mask('refs/sideview.png')
+ms, _ = hull_mask('public/refs/sideview.png')
 sx0, sx1, sy0, sy1 = bbox(ms)
 SH = sy1 - sy0 + 1
 smid = (sy0 + sy1) / 2.0
@@ -78,10 +78,10 @@ def crop(path, out, size=None):
     out_im.save(out)
     return (x1 - x0 + 1) / (y1 - y0 + 1)
 
-a_top = crop('refs/topview.png',    'refs/tex-dorsal.png')
-a_bot = crop('refs/bottomview.png', 'refs/tex-ventral.png')
-crop('refs/sideview.png',   'refs/still-side.png',  (1600, int(round(1600 / 4.955))))
-crop('refs/frontview.png',  'refs/still-front.png', (1600, int(round(1600 / 4.560))))
+a_top = crop('public/refs/topview.png',    'public/refs/tex-dorsal.png')
+a_bot = crop('public/refs/bottomview.png', 'public/refs/tex-ventral.png')
+crop('public/refs/sideview.png',   'public/refs/still-side.png',  (1600, int(round(1600 / 4.955))))
+crop('public/refs/frontview.png',  'public/refs/still-front.png', (1600, int(round(1600 / 4.560))))
 print('cropped texture aspects  dorsal %.3f  ventral %.3f' % (a_top, a_bot))
 
 # ------------------------------------------------------------- emit ---------
@@ -100,7 +100,7 @@ js = ("/* Generated from refs/*.png by tools/extract-hull.py — do not hand-edi
       "   yUp/yDn:   hull envelope above/below the reference waterline\n"
       "              (fraction of max half-height). Station 0 is the bow. */\n\n"
       "export const HULL = " + json.dumps(data, indent=1) + ";\n")
-open('js/hull-data.js', 'w').write(js)
+open('public/js/hull-data.js', 'w').write(js)
 print('plan aspect %.3f   side aspect %.3f' % (data['planAspect'], data['sideAspect']))
 print('bow  half-beam %.3f / %.3f   height  +%.3f / -%.3f' % (zpos[0], zneg[0], yup[0], ydn[0]))
 print('mid  half-beam %.3f          height  +%.3f / -%.3f' % (zpos[N//2], yup[N//2], ydn[N//2]))
