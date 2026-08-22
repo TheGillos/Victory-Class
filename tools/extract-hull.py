@@ -60,7 +60,16 @@ for i in range(N + 1):
 yup = smooth(yup, 9); ydn = smooth(ydn, 9)
 
 # ---------------------------------------------------------- textures --------
-def crop(path, out, size=None):
+def inpaint(rgb, mask):
+    """Flood the background with its nearest hull pixel. The 3D hull is solid,
+    so anywhere geometry exists but the render shows background — the bow notch,
+    the nacelle slots — would otherwise paint black onto the model."""
+    a = np.array(rgb)
+    idx = ndimage.distance_transform_edt(~mask, return_distances=False, return_indices=True)
+    return Image.fromarray(a[idx[0], idx[1]])
+
+
+def crop(path, out, size=None, fill=False):
     """Crop to the hull bounding box and carry the silhouette as alpha, so the
     shader can cut concave detail (the bow notch, the transom scoop) that a
     single-valued loft cannot express."""
@@ -70,16 +79,22 @@ def crop(path, out, size=None):
     w, h = (x1 - x0 + 1), (y1 - y0 + 1)
     # dorsal/ventral share the model's UV space; the stills keep their own aspect
     tw, th = size if size else (TEXW, TEXH)
-    rgb = im.crop(box).convert('RGB').resize((tw, th), Image.LANCZOS)
-    alpha = Image.fromarray((m[y0:y1 + 1, x0:x1 + 1] * 255).astype(np.uint8), 'L')
-    alpha = alpha.resize((tw, th), Image.LANCZOS)
+    sub = m[y0:y1 + 1, x0:x1 + 1]
+    rgb = im.crop(box).convert('RGB')
+    if fill:
+        rgb = inpaint(rgb, sub)
+    rgb = rgb.resize((tw, th), Image.LANCZOS)
     out_im = rgb.convert('RGBA')
-    out_im.putalpha(alpha)
+    if not fill:
+        alpha = Image.fromarray((sub * 255).astype(np.uint8), 'L').resize((tw, th), Image.LANCZOS)
+        out_im.putalpha(alpha)
     out_im.save(out)
     return (x1 - x0 + 1) / (y1 - y0 + 1)
 
-a_top = crop('public/refs/topview.png',    'public/refs/tex-dorsal.png')
-a_bot = crop('public/refs/bottomview.png', 'public/refs/tex-ventral.png')
+a_top = crop('public/refs/topview.png',    'public/refs/tex-dorsal.png',  fill=True)
+a_bot = crop('public/refs/bottomview.png', 'public/refs/tex-ventral.png', fill=True)
+crop('public/refs/topview.png',    'public/refs/still-dorsal.png')
+crop('public/refs/bottomview.png', 'public/refs/still-ventral.png')
 crop('public/refs/sideview.png',   'public/refs/still-side.png',  (1600, int(round(1600 / 4.955))))
 crop('public/refs/frontview.png',  'public/refs/still-front.png', (1600, int(round(1600 / 4.560))))
 print('cropped texture aspects  dorsal %.3f  ventral %.3f' % (a_top, a_bot))

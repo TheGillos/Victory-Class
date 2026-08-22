@@ -261,11 +261,12 @@ html, body {
 
 #stills { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
 .still {
+  /* width and height are set from the camera projection in app.js so the
+     render lands at exactly the size the model occupied */
   position: absolute;
-  inset: calc(74 * var(--s));
-  width: calc(100% - 148 * var(--s));
-  height: calc(100% - 148 * var(--s));
-  object-fit: contain;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   opacity: 0;
   transition: opacity 320ms ease;
 }

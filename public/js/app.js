@@ -184,6 +184,7 @@ function resize() {
   const fitW = 2 * Math.atan((SHIP.length * 0.54) / (RADIUS * camera.aspect));
   camera.fov = THREE.MathUtils.radToDeg(Math.max(fitH, fitW));
   camera.updateProjectionMatrix();
+  layoutStills();
 }
 
 new ResizeObserver(resize).observe(stage);
@@ -197,11 +198,29 @@ resize();
    the model. */
 
 const stills = Array.from(document.querySelectorAll('.still'));
+for (const el of stills) el.addEventListener('load', () => layoutStills());
 const sweep = document.getElementById('sweep');
 const hasStill = (name) => stills.some((s) => s.dataset.view === name);
 
 function hideStills() {
   for (const s of stills) s.classList.remove('shown');
+  ship.visible = true;
+}
+
+/** Size each still so its hull spans exactly what the model's hull spanned:
+    the crops are cut to the hull bounding box, so one dimension maps directly
+    to the ship's length (plan and elevation) or beam (bow and stern). */
+function layoutStills() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  const visW = 2 * RADIUS * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect;
+  for (const el of document.querySelectorAll('.still')) {
+    const span = el.dataset.span === 'beam' ? SHIP.beam : SHIP.length;
+    const px = (span / visW) * w;
+    const ar = (el.naturalWidth && el.naturalHeight) ? el.naturalHeight / el.naturalWidth : 0.5;
+    el.style.width = px + 'px';
+    el.style.height = (px * ar) + 'px';
+  }
 }
 
 function showStill(name) {
@@ -212,9 +231,13 @@ function showStill(name) {
   void sweep.offsetWidth;
   sweep.classList.add('run');
   setTimeout(() => {
-    if (state.current === name && state.t >= 1 && state.mode !== 'wireframe') {
-      el.classList.add('shown');
-    }
+    if (state.current !== name || state.t < 1 || state.mode === 'wireframe') return;
+    el.classList.add('shown');
+    // once the render is fully opaque the model behind it is only visible
+    // through the cut-outs, so retire it until the next transition
+    setTimeout(() => {
+      if (el.classList.contains('shown')) ship.visible = false;
+    }, 340);
   }, 190);
 }
 
