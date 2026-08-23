@@ -14,7 +14,9 @@ Everything published lives under `public/`. Everything else is source of record.
 - `public/js/victory-model.js` — loads and normalises the mesh, and surfaces it
   triplanarly from the reference views (bow +X, dorsal +Y, starboard +Z)
 - `public/js/hull-data.js` — generated reference measurements; do not hand-edit
-- `public/js/app.js` — survey sequence, view stations, still handoff
+- `public/js/app.js` — survey sequence, view stations, still handoff, decks
+- `public/js/annotations.js` — readout groups and their per-view anchors
+- `public/js/annotate.js` — the annotation overlay: pins, leaders, captions
 - `public/css/lcars.css` — LCARS chrome, palette sampled from the reference sheets
 - `public/vendor/` — three.js r169, vendored so the site is plain static files
 - `public/refs/` — reference art and the generated crops
@@ -47,8 +49,9 @@ Cloudflare, deploy command `npx wrangler deploy`. `wrangler.jsonc` declares
 ## Status
 
 Working: the auto-rotating survey across five stations with beauty-still
-handoff, a schematic wireframe mode, and the deck browser — fourteen
-registered deck plates with a continuous slider that settles on a deck.
+handoff, a schematic wireframe mode, the deck browser (fourteen registered
+plates with a continuous slider that settles on a deck), and four annotation
+readouts that pin systems to hardware in whichever station is showing.
 
-Not yet built: per-deck callouts and the reference key, the systems pages,
-and the dossier. All specified in `docs/ui-spec.md`.
+Not yet built: per-deck callouts and the reference key, and the dossier.
+Both specified in `docs/ui-spec.md`.

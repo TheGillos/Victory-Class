@@ -109,13 +109,23 @@ html, body {
 
 #title {
   color: var(--gold);
-  font-size: calc(31 * var(--s));
+  font-size: calc(23 * var(--s));
   font-weight: 700;
   letter-spacing: calc(0.5 * var(--s));
   white-space: nowrap;
   padding-left: calc(10 * var(--s));
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 #title .dot { color: var(--orange); }
+
+#readout-buttons {
+  display: flex;
+  height: 100%;
+  gap: calc(4 * var(--s));
+  flex: 0 0 auto;   /* the selector never gets squeezed; the title truncates */
+}
 
 .cap {
   height: 100%;
@@ -125,7 +135,8 @@ html, body {
 .bar-fill {
   height: 100%;
   background: var(--lavender);
-  flex: 1 1 auto;
+  flex: 1 1 calc(30 * var(--s));
+  min-width: calc(24 * var(--s));
   border-radius: 0 var(--radius) var(--radius) 0;
   position: relative;
 }
@@ -401,3 +412,117 @@ html, body {
 /* the spec block sits where the deck readout lands */
 #decks.on ~ #deck-rail { }
 body.decks #specs { opacity: 0; }
+
+/* --- annotation overlay ---------------------------------------------------- */
+
+#anno-svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  overflow: visible;
+}
+#anno-boxes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.anno-line {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: calc(1.4 * var(--s));
+  stroke-linejoin: round;
+  opacity: 0.9;
+  stroke-dasharray: 1400;
+  stroke-dashoffset: 1400;
+  animation: anno-draw 380ms cubic-bezier(.35,0,.2,1) forwards;
+}
+@keyframes anno-draw { to { stroke-dashoffset: 0; } }
+
+.anno-pin {
+  fill: none;
+  stroke: var(--orange);
+  stroke-width: calc(1.6 * var(--s));
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: anno-bloom 420ms cubic-bezier(.2,.9,.3,1) forwards;
+}
+@keyframes anno-bloom {
+  0%   { opacity: 0; transform: scale(0.2); }
+  55%  { opacity: 1; transform: scale(1.35); }
+  100% { opacity: 0.95; transform: scale(1); }
+}
+
+.anno-dot {
+  fill: var(--gold);
+  opacity: 0;
+  animation: anno-fade 300ms ease forwards;
+}
+@keyframes anno-fade { to { opacity: 1; } }
+
+.anno-box {
+  position: absolute;
+  background: rgba(10, 8, 14, 0.82);
+  border-left: calc(4 * var(--s)) solid var(--orange);
+  padding: calc(5 * var(--s)) calc(9 * var(--s)) calc(6 * var(--s));
+  color: var(--lavender);
+  font-size: calc(13.5 * var(--s));
+  line-height: 1.28;
+  letter-spacing: calc(0.3 * var(--s));
+  text-transform: uppercase;
+  opacity: 0;
+  clip-path: inset(0 100% 0 0);
+  animation: anno-wipe-l 300ms cubic-bezier(.3,0,.2,1) forwards;
+}
+.anno-box.anno-r {
+  border-left: 0;
+  border-right: calc(4 * var(--s)) solid var(--orange);
+  text-align: right;
+  animation-name: anno-wipe-r;
+}
+.anno-box b {
+  display: block;
+  color: var(--gold);
+  font-size: calc(15.5 * var(--s));
+  font-weight: 700;
+  letter-spacing: calc(0.5 * var(--s));
+  margin-bottom: calc(2 * var(--s));
+}
+.anno-box span { display: block; }
+
+@keyframes anno-wipe-l {
+  from { opacity: 0; clip-path: inset(0 100% 0 0); }
+  to   { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+@keyframes anno-wipe-r {
+  from { opacity: 0; clip-path: inset(0 0 0 100%); }
+  to   { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+
+/* readout selector in the top bar */
+.readout-btn {
+  height: 100%;
+  flex: 0 0 auto;
+  background: var(--lavender);
+  color: var(--ink);
+  border: 0;
+  font-family: inherit;
+  font-size: calc(14 * var(--s));
+  font-weight: 600;
+  letter-spacing: calc(0.4 * var(--s));
+  text-transform: uppercase;
+  padding: 0 calc(10 * var(--s)) calc(2 * var(--s));
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 90ms linear, color 90ms linear, opacity 140ms linear;
+}
+.readout-btn:hover:not(:disabled) { background: var(--rose); }
+.readout-btn.is-active { background: var(--orange); }
+.readout-btn:disabled {
+  background: #2a2740;
+  color: #5d5878;
+  cursor: default;
+}

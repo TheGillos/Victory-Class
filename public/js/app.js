@@ -5,6 +5,8 @@
 
 import * as THREE from '../vendor/three.module.min.js';
 import { buildVictory, SHIP } from './victory-model.js';
+import { HULL } from './hull-data.js';
+import { createAnnotations } from './annotate.js';
 
 /* --- view stations -------------------------------------------------------- */
 /* dir = unit vector from the ship toward the camera; up orients the screen.  */
@@ -128,6 +130,7 @@ function goTo(name, { fromAuto = false } = {}) {
   state.t = 0;
   setViewLabel(name);
   markActive(name);
+  anno.refresh();      // t is 0 now, so this clears until the station settles
 }
 
 function stopAuto() {
@@ -135,6 +138,7 @@ function stopAuto() {
   state.auto = false;
   document.getElementById('btn-auto').classList.remove('is-active');
   setScan(false);
+  syncReadoutButtons();
 }
 
 function startAuto() {
@@ -145,6 +149,7 @@ function startAuto() {
   const idx = SEQUENCE.indexOf(state.current);
   state.seqIndex = idx >= 0 ? idx : 0;
   state.holdUntil = performance.now() + HOLD_MS;
+  syncReadoutButtons();
 }
 
 /* --- chrome bindings ------------------------------------------------------ */
@@ -210,6 +215,7 @@ function resize() {
   camera.updateProjectionMatrix();
   layoutStills();
   layoutDecks();
+  anno.refresh();
 }
 
 
@@ -272,7 +278,6 @@ function frame(now) {
   last = now;
 
   if (state.t < 1) {
-    const wasRunning = state.t > 0;
     state.t = Math.min(1, state.t + dt / TRANSITION_MS);
     const k = easeInOutCubic(state.t);
     rig.quaternion.slerpQuaternions(state.from, state.to, k);
@@ -282,7 +287,8 @@ function frame(now) {
     layoutDecks();
     if (state.t >= 1) {
       if (state.auto) state.holdUntil = now + HOLD_MS;
-      if (wasRunning) showStill(state.current);
+      showStill(state.current);
+      anno.refresh();
     }
   } else if (state.auto && now >= state.holdUntil) {
     state.seqIndex = (state.seqIndex + 1) % SEQUENCE.length;
@@ -403,6 +409,7 @@ function enterDecks() {
   document.body.classList.add('decks');
   btnDecks.classList.add('is-active');
   btnDecks.textContent = 'EXIT DECKS';
+  syncReadoutButtons();
   layoutDecks();
   paintDecks();
   setScan(false);
@@ -417,6 +424,8 @@ function exitDecks() {
   btnDecks.textContent = 'EXPLORE DECKS';
   ship.visible = true;
   showStill(state.current);
+  syncReadoutButtons();
+  anno.refresh();
 }
 
 btnDecks.addEventListener('click', () => (deck.on ? exitDecks() : enterDecks()));
@@ -456,6 +465,65 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') exitDecks();
 });
 
+/* --- annotation overlay ---------------------------------------------------
+
+   Readouts pin to hardware in the current view. They are only meaningful on a
+   settled station with the model or its render actually facing the viewer, so
+   the selector is disabled while the survey is running and while the deck
+   browser has the stage.
+--------------------------------------------------------------------------- */
+
+/* width:height of the hull in each view, measured off the reference art */
+const VIEW_ASPECT = {
+  top: HULL.planAspect,
+  ventral: HULL.planAspect,
+  starboard: HULL.sideAspect,
+  forward: HULL.elevationAspect.front,
+  aft: HULL.elevationAspect.rear
+};
+
+function hullRect(view) {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return null;
+  const visW = 2 * RADIUS * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect;
+  const pw = (spanOf(view) / visW) * w;
+  const ph = pw / (VIEW_ASPECT[view] || 1.5);
+  return { x: (w - pw) / 2, y: (h - ph) / 2, w: pw, h: ph };
+}
+
+const annoEnabled = () => !state.auto && !deck.on && state.t >= 1;
+
+const anno = createAnnotations({
+  stage,
+  getRect: hullRect,
+  getView: () => state.current,
+  isEnabled: annoEnabled,
+  unit: () => parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue('--s')) || (stage.clientWidth / 1778)
+});
+
+const readoutBar = document.getElementById('readout-buttons');
+const readoutButtons = anno.groups.map((g) => {
+  const b = document.createElement('button');
+  b.className = 'readout-btn';
+  b.innerHTML = g.button;
+  b.addEventListener('click', () => {
+    anno.set(g.id);
+    syncReadoutButtons();
+  });
+  readoutBar.appendChild(b);
+  return b;
+});
+
+function syncReadoutButtons() {
+  const usable = !state.auto && !deck.on;
+  readoutButtons.forEach((b, i) => {
+    b.disabled = !usable;
+    b.classList.toggle('is-active', usable && anno.active === anno.groups[i].id);
+  });
+  if (!usable && anno.active) anno.off();
+}
+
 /* --- chrome sync ---------------------------------------------------------- */
 
 let lastSynced = null;
@@ -488,4 +556,5 @@ resize();
 setViewLabel('starboard');
 markActive('starboard');
 setScan(false);
+syncReadoutButtons();
 requestAnimationFrame(frame);
