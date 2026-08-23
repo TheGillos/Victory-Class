@@ -294,3 +294,110 @@ html, body {
   18%  { opacity: 1; }
   100% { opacity: 0;   background-position: 0 110%; }
 }
+
+
+/* --- deck browser ---------------------------------------------------------- */
+
+#decks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms ease;
+  z-index: 3;
+}
+#decks.on { opacity: 1; }
+/* shift clear of the deck rail so the plan stays centred in what is left */
+#decks.on .deck-plate { margin-left: calc(-82 * var(--s)); }
+
+.deck-plate {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  will-change: opacity;
+}
+
+/* right-hand deck selector */
+#deck-rail {
+  position: absolute;
+  top: calc(12 * var(--s));
+  right: calc(14 * var(--s));
+  bottom: calc(12 * var(--s));
+  width: calc(150 * var(--s));
+  display: none;
+  flex-direction: column;
+  gap: calc(6 * var(--s));
+  z-index: 7;
+  user-select: none;
+}
+#deck-rail.on { display: flex; }
+
+#deck-readout {
+  background: var(--periwinkle);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: calc(6 * var(--s)) calc(10 * var(--s)) calc(8 * var(--s));
+  text-align: right;
+  flex: 0 0 auto;
+}
+#deck-readout b {
+  display: block;
+  color: var(--ink);
+  font-size: calc(40 * var(--s));
+  line-height: 0.95;
+  font-weight: 700;
+}
+#deck-readout span {
+  display: block;
+  color: #e6e2f5;
+  font-size: calc(12.5 * var(--s));
+  line-height: 1.1;
+  min-height: calc(41 * var(--s));
+  letter-spacing: calc(0.4 * var(--s));
+  text-transform: uppercase;
+}
+
+#deck-track {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--s));
+  cursor: ns-resize;
+}
+
+.deck-tick {
+  flex: 1 1 0;
+  min-height: calc(18 * var(--s));
+  background: var(--lavender);
+  color: var(--ink);
+  border: 0;
+  font-family: inherit;
+  font-size: calc(15 * var(--s));
+  font-weight: 600;
+  letter-spacing: calc(0.4 * var(--s));
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 calc(10 * var(--s));
+  cursor: pointer;
+  transition: background 90ms linear, color 90ms linear;
+}
+.deck-tick:hover { background: var(--rose); }
+.deck-tick.near   { background: var(--rose); }
+.deck-tick.is-active { background: var(--orange); color: var(--ink); }
+.deck-tick:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+
+.deck-hint {
+  flex: 0 0 auto;
+  color: var(--periwinkle);
+  font-size: calc(12 * var(--s));
+  letter-spacing: calc(0.8 * var(--s));
+  text-align: right;
+  padding-top: calc(2 * var(--s));
+}
+
+
+/* the spec block sits where the deck readout lands */
+#decks.on ~ #deck-rail { }
+body.decks #specs { opacity: 0; }

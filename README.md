@@ -18,9 +18,16 @@ Everything published lives under `public/`. Everything else is source of record.
 - `public/css/lcars.css` — LCARS chrome, palette sampled from the reference sheets
 - `public/vendor/` — three.js r169, vendored so the site is plain static files
 - `public/refs/` — reference art and the generated crops
+- `public/refs/decks/` — the fourteen deck plates, registered onto the hull's
+  plan silhouette and stored as opaque WebP (2 MB for all fourteen; the same
+  plates with an alpha channel came to 25 MB as PNG)
+- `refs-src/decks/` — the deck renders as delivered, before registration
 - `tools/extract-hull.py` — measures the hull off the reference views and
   regenerates `hull-data.js` and the texture crops. Run from the repo root
   after changing the art.
+- `tools/register-decks.py` — fits each deck render onto the hull's plan
+  silhouette by maximising overlap, so the ship holds still while scrubbing
+- `tools/clean-hull.py` — strips detached geometry from a scanned hull
 - `docs/deck-plan.md` — deck-by-deck layout
 - `docs/ui-spec.md` — screen layout and interaction spec
 
@@ -39,6 +46,9 @@ Cloudflare, deploy command `npx wrangler deploy`. `wrangler.jsonc` declares
 
 ## Status
 
-The overview stage is working: auto-rotating survey with five manual view
-stations and a wireframe mode. Deck plans, systems, and the dossier are
-specified in `docs/ui-spec.md` but not yet built.
+Working: the auto-rotating survey across five stations with beauty-still
+handoff, a schematic wireframe mode, and the deck browser — fourteen
+registered deck plates with a continuous slider that settles on a deck.
+
+Not yet built: per-deck callouts and the reference key, the systems pages,
+and the dossier. All specified in `docs/ui-spec.md`.

@@ -149,9 +149,10 @@ function startAuto() {
 
 /* --- chrome bindings ------------------------------------------------------ */
 
-function setViewLabel(name) {
+function setViewLabel(name, suffix) {
+  const tail = suffix || 'SCAN 75747';
   document.getElementById('view-label').innerHTML =
-    `${STATIONS[name].label} <span>&nbsp;/&nbsp;SCAN 75747</span>`;
+    `${STATIONS[name].label} <span>&nbsp;/&nbsp;${tail}</span>`;
 }
 
 function setScan(live) {
@@ -168,7 +169,10 @@ function markActive(name) {
 }
 
 document.querySelectorAll('.pill[data-view]').forEach((btn) => {
-  btn.addEventListener('click', () => goTo(btn.dataset.view));
+  btn.addEventListener('click', () => {
+    if (typeof deck !== 'undefined' && deck.on && btn.dataset.view !== 'top') exitDecks();
+    goTo(btn.dataset.view);
+  });
 });
 
 document.getElementById('btn-auto').addEventListener('click', () => {
@@ -205,11 +209,9 @@ function resize() {
   camera.fov = state.fovFrom;
   camera.updateProjectionMatrix();
   layoutStills();
+  layoutDecks();
 }
 
-new ResizeObserver(resize).observe(stage);
-window.addEventListener('resize', resize);
-resize();
 
 /* --- orthographic stills -------------------------------------------------- */
 /* Once a station settles, cross-fade from the model to the rendered ortho for
@@ -224,7 +226,7 @@ const hasStill = (name) => stills.some((s) => s.dataset.view === name);
 
 function hideStills() {
   for (const s of stills) s.classList.remove('shown');
-  ship.visible = true;
+  if (!deck.on) ship.visible = true;
 }
 
 /** Size each still so its hull spans exactly what the model's hull spanned:
@@ -244,7 +246,7 @@ function layoutStills() {
 }
 
 function showStill(name) {
-  if (state.mode === 'wireframe') return;
+  if (state.mode === 'wireframe' || deck.on) return;
   const el = stills.find((s) => s.dataset.view === name);
   if (!el) return;
   sweep.classList.remove('run');
@@ -277,6 +279,7 @@ function frame(now) {
     camera.fov = state.fovFrom + (state.fovTo - state.fovFrom) * k;
     camera.updateProjectionMatrix();
     layoutStills();
+    layoutDecks();
     if (state.t >= 1) {
       if (state.auto) state.holdUntil = now + HOLD_MS;
       if (wasRunning) showStill(state.current);
@@ -286,16 +289,178 @@ function frame(now) {
     goTo(SEQUENCE[state.seqIndex], { fromAuto: true });
   }
 
+  if (deck.on || Math.abs(deck.pos - deck.target) > 0.001) {
+    const k = dragging ? 0.35 : 0.16;
+    deck.pos += (deck.target - deck.pos) * Math.min(1, k * dt / 16.7);
+    if (!dragging && Math.abs(deck.target - deck.pos) < 0.004) deck.pos = deck.target;
+    paintDecks();
+  }
+
   syncChrome();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 
+/* --- deck browser ----------------------------------------------------------
+
+   Pushes the survey to the dorsal station, locks it there, and lays the
+   registered deck plates over the hull. Plates are pre-fitted to the top view's
+   plan silhouette by tools/register-decks.py, so they hold still as you scrub.
+   The slider is continuous but settles on a deck: adjacent plates cross-fade
+   through the travel and the position eases onto the nearest whole deck.
+--------------------------------------------------------------------------- */
+
+const DECK_NAMES = [
+  'Dorsal Equipment Space',
+  'Command',
+  'Senior Officers / Upper Aft Machinery',
+  'Medical / Armory / Engineering Overlook',
+  'Habitation / Engineering Control',
+  'Crew Support / Core Centerline',
+  'Engineering Floor / Computer / Cloak',
+  'Security / Primary Forward Weapons',
+  'Heavy Ordnance',
+  'Deflector / Interdiction / Stores',
+  'Auxiliary Power / Fuel',
+  'Ventral Sensors / Transport / Antimatter',
+  'Thermal & Structural Management',
+  'Ventral Equipment Space'
+];
+
+const deckLayer = document.getElementById('decks');
+const deckRail = document.getElementById('deck-rail');
+const deckTrack = document.getElementById('deck-track');
+const btnDecks = document.getElementById('btn-decks');
+
+const deck = { on: false, pos: 1, target: 1, frame: 1.25, plates: [], ticks: [] };
+
+for (let i = 1; i <= DECK_NAMES.length; i++) {
+  const img = document.createElement('img');
+  img.className = 'deck-plate';
+  img.alt = '';
+  img.loading = i <= 2 ? 'eager' : 'lazy';
+  img.src = `refs/decks/deck-${String(i).padStart(2, '0')}.webp`;
+  img.addEventListener('load', layoutDecks);
+  deckLayer.appendChild(img);
+  deck.plates.push(img);
+
+  const tick = document.createElement('button');
+  tick.className = 'deck-tick';
+  tick.textContent = String(i).padStart(2, '0');
+  tick.addEventListener('click', () => { deck.target = i; });
+  deckTrack.appendChild(tick);
+  deck.ticks.push(tick);
+}
+
+fetch('refs/decks/registration.json')
+  .then((r) => r.json())
+  .then((j) => { if (j.hullFraction) { deck.frame = 1 / j.hullFraction; layoutDecks(); } })
+  .catch(() => {});
+
+/** Plates are registered to the hull's plan, so they scale with the hull. */
+function layoutDecks() {
+  const w = stage.clientWidth;
+  if (!w || !deck.plates.length) return;
+  const visW = 2 * RADIUS * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect;
+  const px = (SHIP.length / visW) * w * deck.frame;
+  for (const img of deck.plates) {
+    if (!img.naturalWidth) continue;
+    img.style.width = px + 'px';
+    img.style.height = (px * img.naturalHeight / img.naturalWidth) + 'px';
+  }
+}
+
+function paintDecks() {
+  const n = DECK_NAMES.length;
+  const lo = Math.floor(deck.pos);
+  const frac = deck.pos - lo;
+  for (let i = 1; i <= n; i++) {
+    let o = 0;
+    if (i === lo) o = 1 - frac;
+    else if (i === lo + 1) o = frac;
+    const img = deck.plates[i - 1];
+    img.style.opacity = o;
+    img.style.visibility = o > 0.002 ? 'visible' : 'hidden';
+  }
+  const nearest = Math.min(n, Math.max(1, Math.round(deck.pos)));
+  document.getElementById('deck-no').textContent = String(nearest).padStart(2, '0');
+  document.getElementById('deck-name').textContent = DECK_NAMES[nearest - 1];
+  setViewLabel('top', `DECK ${String(nearest).padStart(2, '0')}`);
+  deck.ticks.forEach((t, k) => {
+    t.classList.toggle('is-active', k + 1 === nearest);
+    t.classList.toggle('near', Math.abs(k + 1 - deck.pos) < 1 && k + 1 !== nearest);
+  });
+}
+
+function enterDecks() {
+  deck.on = true;
+  stopAuto();
+  hideStills();
+  goTo('top');
+  ship.visible = false;
+  deckLayer.classList.add('on');
+  deckRail.classList.add('on');
+  document.body.classList.add('decks');
+  btnDecks.classList.add('is-active');
+  btnDecks.textContent = 'EXIT DECKS';
+  layoutDecks();
+  paintDecks();
+  setScan(false);
+}
+
+function exitDecks() {
+  deck.on = false;
+  deckLayer.classList.remove('on');
+  deckRail.classList.remove('on');
+  document.body.classList.remove('decks');
+  btnDecks.classList.remove('is-active');
+  btnDecks.textContent = 'EXPLORE DECKS';
+  ship.visible = true;
+  showStill(state.current);
+}
+
+btnDecks.addEventListener('click', () => (deck.on ? exitDecks() : enterDecks()));
+
+function nudgeDeck(d) {
+  deck.target = Math.min(DECK_NAMES.length, Math.max(1, Math.round(deck.target) + d));
+}
+
+/* drag the track to scrub */
+let dragging = false;
+function scrubTo(clientY) {
+  const r = deckTrack.getBoundingClientRect();
+  const k = (clientY - r.top) / Math.max(1, r.height);
+  deck.target = 1 + Math.min(1, Math.max(0, k)) * (DECK_NAMES.length - 1);
+}
+deckTrack.addEventListener('pointerdown', (e) => {
+  dragging = true;
+  deckTrack.setPointerCapture(e.pointerId);
+  scrubTo(e.clientY);
+});
+deckTrack.addEventListener('pointermove', (e) => { if (dragging) scrubTo(e.clientY); });
+deckTrack.addEventListener('pointerup', () => {
+  dragging = false;
+  deck.target = Math.round(deck.target);   // settle on a whole deck
+});
+
+stage.addEventListener('wheel', (e) => {
+  if (!deck.on) return;
+  e.preventDefault();
+  nudgeDeck(Math.sign(e.deltaY));
+}, { passive: false });
+
+window.addEventListener('keydown', (e) => {
+  if (!deck.on) return;
+  if (e.key === 'ArrowDown') { nudgeDeck(1); e.preventDefault(); }
+  if (e.key === 'ArrowUp') { nudgeDeck(-1); e.preventDefault(); }
+  if (e.key === 'Escape') exitDecks();
+});
+
 /* --- chrome sync ---------------------------------------------------------- */
 
 let lastSynced = null;
 function syncChrome() {
-  if (state.current === lastSynced) return;
+  if (deck.on || state.current === lastSynced) return;
   lastSynced = state.current;
   setViewLabel(state.current);
   markActive(state.current);
@@ -314,6 +479,11 @@ function dismissBoot() {
 }
 boot.addEventListener('click', dismissBoot);
 setTimeout(dismissBoot, 3000);
+
+// wired last: resize() touches the deck layer, declared above
+new ResizeObserver(resize).observe(stage);
+window.addEventListener('resize', resize);
+resize();
 
 setViewLabel('starboard');
 markActive('starboard');
