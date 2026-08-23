@@ -87,7 +87,8 @@ def inpaint(rgb, mask):
     return Image.fromarray(a[idx[0], idx[1]])
 
 
-LEVEL = {}     # hull-mean luminance of each inpainted texture, dorsal first
+LEVEL = {}       # hull-mean luminance of each inpainted texture, dorsal first
+ELEVATION = {}   # width:height of each elevation view
 
 
 def match_level(rgb, mask, target):
@@ -140,6 +141,7 @@ for name, src in [('side', 'sideview'), ('front', 'frontview'), ('rear', 'rearvi
     size = (1600, max(1, int(round(1600 / ar))))
     crop('public/refs/%s.png' % src, 'public/refs/still-%s.png' % name, size)
     crop('public/refs/%s.png' % src, 'public/refs/tex-%s.png' % name, size, fill=True)
+    ELEVATION[name] = round(ar, 4)
     print('%-6s aspect %.3f' % (name, ar))
 print('cropped texture aspects  dorsal %.3f  ventral %.3f' % (a_top, a_bot))
 
@@ -148,6 +150,7 @@ data = {
   'n': N,
   'planAspect': round((tx1 - tx0 + 1) / TH, 4),
   'sideAspect': round((sx1 - sx0 + 1) / SH, 4),
+  'elevationAspect': ELEVATION,
   'zPos': [round(float(v), 5) for v in zpos],
   'zNeg': [round(float(v), 5) for v in zneg],
   'yUp':  [round(float(v), 5) for v in yup],

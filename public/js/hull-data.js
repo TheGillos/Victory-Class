@@ -7,6 +7,11 @@ export const HULL = {
  "n": 160,
  "planAspect": 1.4972,
  "sideAspect": 4.4851,
+ "elevationAspect": {
+  "side": 4.4851,
+  "front": 2.8361,
+  "rear": 2.5464
+ },
  "zPos": [
   0.27686,
   0.29322,

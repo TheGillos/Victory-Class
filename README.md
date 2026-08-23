@@ -8,9 +8,12 @@ a fan-made Star Trek ship class set in late 2374, during the Dominion War.
 Everything published lives under `public/`. Everything else is source of record.
 
 - `public/index.html` — the console
-- `public/js/victory-model.js` — hull lofted from the reference orthographics
-  (bow +X, dorsal +Y, starboard +Z)
-- `public/js/hull-data.js` — generated section data; do not hand-edit
+- `public/models/victory.glb` — the hull mesh, meshopt-compressed
+  (314k triangles, 1.2 MB); `victory-lowpoly.glb` is the decimated copy the
+  schematic wireframe is built from
+- `public/js/victory-model.js` — loads and normalises the mesh, and surfaces it
+  triplanarly from the reference views (bow +X, dorsal +Y, starboard +Z)
+- `public/js/hull-data.js` — generated reference measurements; do not hand-edit
 - `public/js/app.js` — survey sequence, view stations, still handoff
 - `public/css/lcars.css` — LCARS chrome, palette sampled from the reference sheets
 - `public/vendor/` — three.js r169, vendored so the site is plain static files
