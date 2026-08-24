@@ -40,7 +40,9 @@ Everything published lives under `public/`. Everything else is source of record.
 - `tools/register-decks.py` — centres the shared frame on the hull outline and
   matches its proportions to the exterior top view. Because the outline layer
   is common to every deck, one transform serves all fourteen — there is
-  nothing left to drift between them.
+  nothing left to drift between them. It also measures the baked-in deck
+  titles and cuts them off below the lowest one, rather than at a fixed row
+  that the taller titles hang past.
 - `tools/clean-hull.py` — strips detached geometry from a scanned hull
 - `docs/deck-plan.md` — deck-by-deck layout
 - `docs/ui-spec.md` — screen layout and interaction spec
@@ -77,7 +79,8 @@ Both specified in `docs/ui-spec.md`.
 Nine cues: a looping ambient engine bed, work/fail feedback on every button
 press, secondary confirmation sounds for view changes, auto-survey,
 wireframe, and the deck browser, and a two-part boot voice sequence
-(accessing-library → security-accepted). Browsers block audio until the
-page has seen a user gesture, so the boot sequence is attempted immediately
-and retried on the first click or keypress anywhere if that's blocked; a
+(accessing-library → security-accepted). Browsers block audio until the page
+has seen a user gesture, so the boot screen holds until PROCEED is pressed —
+the load bar grows into that button once the hull and its textures are in —
+and that press is what starts the welcome sequence and the engine bed. A
 MUTE pill in the bottom bar silences everything, including the ambient loop.

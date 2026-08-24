@@ -223,7 +223,7 @@ function normaliseHull(geo) {
   return geo;
 }
 
-export function buildVictory(onTexturesReady) {
+export function buildVictory(onTexturesReady, onHullReady) {
   const root = new THREE.Group();
   root.name = 'USS_VICTORY';
 
@@ -270,6 +270,7 @@ export function buildVictory(onTexturesReady) {
     hull.name = 'hull';
     hull.visible = !wireWanted;
     root.add(hull);
+    if (onHullReady) onHullReady();
   });
 
   root.userData.setMode = function (mode) {

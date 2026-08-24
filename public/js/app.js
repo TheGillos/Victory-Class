@@ -63,7 +63,9 @@ const rig = new THREE.Group();
 rig.add(camera);
 scene.add(rig);
 
-const ship = buildVictory();
+// the two callbacks let the boot screen wait for the real thing rather than
+// for a fixed timer; both are hoisted declarations further down
+const ship = buildVictory(() => loaded('textures'), () => loaded('hull'));
 scene.add(ship);
 
 /* Lighting rides with the camera. A world-fixed key leaves whichever face is
@@ -727,18 +729,51 @@ function syncChrome() {
 
 /* --- boot ----------------------------------------------------------------- */
 
+/* The boot screen holds until PROCEED is pressed rather than timing out. That
+   press is the user gesture browsers demand before audio may play, so the
+   welcome sequence and the engine bed start with the console instead of
+   waiting for whatever the first click elsewhere happens to be.
+
+   The bar means something: it creeps most of the way on its own, then covers
+   the last stretch only once the hull mesh and its textures are actually in,
+   and grows into the button from there. A failsafe releases it anyway if an
+   asset never arrives, so a bad download can't strand anyone on this screen. */
+
 const boot = document.getElementById('boot');
+const btnProceed = document.getElementById('btn-proceed');
+const WAITING_ON = new Set(['hull', 'textures', 'creep']);
+const LOAD_FAILSAFE = 12000;
+const FILL_LAST = 420;          // matches the width transition on .prog.loaded i
+let bootReady = false;
 let booted = false;
+
+function loaded(what) {
+  if (!WAITING_ON.delete(what) || WAITING_ON.size) return;
+  btnProceed.classList.add('loaded');          // run the bar out to full
+  setTimeout(() => {
+    bootReady = true;
+    btnProceed.classList.add('ready');         // then grow it into the button
+    btnProceed.classList.remove('is-disabled');
+  }, FILL_LAST);
+}
+
+btnProceed.querySelector('i').addEventListener('animationend', () => loaded('creep'));
+setTimeout(() => { for (const k of [...WAITING_ON]) loaded(k); }, LOAD_FAILSAFE);
+
 function dismissBoot() {
-  if (booted) return;
+  if (booted || !bootReady) return;
   booted = true;
   boot.classList.add('gone');
   sfx.startEngine();
   startAuto();
   showStill(state.current);
 }
-boot.addEventListener('click', dismissBoot);
-setTimeout(dismissBoot, 3000);
+
+btnProceed.addEventListener('click', () => {
+  if (!bootReady) { sfx.play('button-press-fail'); return; }
+  sfx.play('button-press-work');
+  dismissBoot();
+});
 
 /* --- mute -------------------------------------------------------------- */
 
@@ -773,7 +808,7 @@ syncMute();
 // already plays work/secondary or fail, so the catch-all must not double it.
 const INTERACTIVE_SELECTOR =
   '.pill[data-view], #btn-auto, #btn-mode, #btn-decks, #btn-mute, ' +
-  '.readout-btn, .deck-tick, #deck-track, #boot';
+  '.readout-btn, .deck-tick, #deck-track, #btn-proceed';
 
 document.getElementById('console').addEventListener('click', (e) => {
   if (!e.target.closest(INTERACTIVE_SELECTOR)) sfx.play('button-press-fail');

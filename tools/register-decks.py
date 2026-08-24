@@ -24,9 +24,12 @@ SRC = os.environ.get('DECK_SRC', 'refs-src/decks-v2')
 OUT_DIR = 'public/refs/decks'
 HULL_DATA = 'public/js/hull-data.js'
 
-TITLE_ROWS = 62        # baked titles live above this; the outline starts at 68
 OUT_HULL_W = 1600      # width the hull occupies after scaling
 DISK = np.ones((5, 5), bool)
+
+TITLE_MARGIN = 16      # rows of clearance below the lowest glyph
+TITLE_INK = 12         # lit pixels needed before a row counts as ink
+TITLE_GAP = 8          # blank rows that end the title block
 
 
 def plan_aspect():
@@ -43,6 +46,34 @@ def silhouette(img, thr=6):
     lab, n = ndimage.label(m)
     sizes = ndimage.sum(m, lab, range(1, n + 1))
     return ndimage.binary_fill_holes(lab == int(np.argmax(sizes)) + 1)
+
+
+def title_block(img):
+    """Rows spanned by the baked "DECK NN — NAME" title at the top of a plate.
+
+    The titles are set at different sizes per deck and some descend a good deal
+    further than others, so a fixed cut leaves the bottoms of the tall ones
+    showing. Measure instead: the title is the first run of ink from the top,
+    and it ends at the first real blank gap — every plate then has hundreds of
+    empty rows before its own artwork begins, so there is no chance of the cut
+    reaching anything worth keeping.
+
+    Returns the first and last row of the title plus the first row of ink below
+    it, so the caller can check the cut lands inside the gap between the two.
+    """
+    a = np.asarray(img.convert('RGB')).astype(np.int32)
+    lum = a[..., 0] * 0.3 + a[..., 1] * 0.59 + a[..., 2] * 0.11
+    ink = (lum > 4).sum(axis=1) >= TITLE_INK
+    rows = [int(r) for r in np.flatnonzero(ink)]
+    if not rows:
+        return 0, 0, None
+    last = rows[0]
+    for r in rows:
+        if r > last + TITLE_GAP:
+            break
+        last = r
+    below = [r for r in rows if r > last]
+    return rows[0], last, (below[0] if below else None)
 
 
 def main():
@@ -70,11 +101,25 @@ def main():
     print('centred canvas %dx%d -> output %dx%d, hull %dx%d (stretch y %.3f)'
           % (cw, ch, fw, fh, OUT_HULL_W, out_hull_h, (hw / hh) / aspect))
 
+    plates = {i: Image.open(f'{SRC}/aD{i}.webp').convert('RGB') for i in range(1, 15)}
+    blocks = {i: title_block(im) for i, im in plates.items()}
+
+    # One cut for every plate: the lowest title on any deck, plus clearance.
+    # A per-deck cut would buy nothing (the rows are black either way) and would
+    # make the top edge jitter while scrubbing through the decks.
+    lowest = max(blocks, key=lambda i: blocks[i][1])
+    cut = blocks[lowest][1] + TITLE_MARGIN
+    clear = min((b[2] for b in blocks.values() if b[2]), default=10 ** 9)
+    print('titles end by row %d (deck %d); cutting %d rows, %d clear of the art'
+          % (blocks[lowest][1], lowest, cut, clear - cut))
+    if cut >= clear:
+        raise SystemExit('cut of %d rows would reach deck art at row %d' % (cut, clear))
+
     def place(img, blank_title):
-        src = img.convert('RGB')
+        src = img
         if blank_title:
             a = np.asarray(src).copy()
-            a[:TITLE_ROWS] = 0          # drop the baked title, keep the frame
+            a[:cut] = 0                 # drop the baked title, keep the frame
             src = Image.fromarray(a)
         canvas = Image.new('RGB', (cw, ch), (0, 0, 0))
         canvas.paste(src, (offx, offy))
@@ -82,9 +127,8 @@ def main():
 
     place(outline, False).save(f'{OUT_DIR}/hull-outline.webp', quality=88, method=6)
 
-    for i in range(1, 15):
-        plate = place(Image.open(f'{SRC}/aD{i}.webp'), True)
-        plate.save(f'{OUT_DIR}/deck-{i:02d}.webp', quality=84, method=6)
+    for i, im in plates.items():
+        place(im, True).save(f'{OUT_DIR}/deck-{i:02d}.webp', quality=84, method=6)
 
     json.dump({'frame': [fw, fh],
                'hullFraction': round(OUT_HULL_W / fw, 5),
