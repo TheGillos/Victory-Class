@@ -9,6 +9,7 @@ import { HULL } from './hull-data.js';
 import { createAnnotations } from './annotate.js';
 import { READOUTS } from './annotations.js';
 import { DECKS, ZONE_U } from './deck-data.js';
+import { sfx } from './audio.js';
 
 /* --- view stations -------------------------------------------------------- */
 /* dir = unit vector from the ship toward the camera; up orients the screen.  */
@@ -184,17 +185,23 @@ function markActive(name) {
 
 document.querySelectorAll('.pill[data-view]').forEach((btn) => {
   btn.addEventListener('click', () => {
+    sfx.play('button-press-work');
+    sfx.play('change-view-or-display-readout');
     if (typeof deck !== 'undefined' && deck.on && btn.dataset.view !== 'top') exitDecks();
     goTo(btn.dataset.view);
   });
 });
 
 document.getElementById('btn-auto').addEventListener('click', () => {
+  sfx.play('button-press-work');
+  sfx.play('enable-or-disable-auto-camera');
   if (state.auto) stopAuto(); else startAuto();
 });
 
 const btnMode = document.getElementById('btn-mode');
 btnMode.addEventListener('click', () => {
+  sfx.play('button-press-work');
+  sfx.play('wireframe');
   state.mode = state.mode === 'solid' ? 'wireframe' : 'solid';
   ship.userData.setMode(state.mode);
   hideStills();
@@ -373,7 +380,7 @@ for (let i = 1; i <= DECK_NAMES.length; i++) {
   const tick = document.createElement('button');
   tick.className = 'deck-tick';
   tick.textContent = String(i).padStart(2, '0');
-  tick.addEventListener('click', () => { deck.target = i; });
+  tick.addEventListener('click', () => { sfx.play('button-press-work'); deck.target = i; });
   deckTrack.appendChild(tick);
   deck.ticks.push(tick);
 }
@@ -490,7 +497,11 @@ function exitDecks() {
   anno.refresh();
 }
 
-btnDecks.addEventListener('click', () => (deck.on ? exitDecks() : enterDecks()));
+btnDecks.addEventListener('click', () => {
+  sfx.play('button-press-work');
+  sfx.play('decks-view');
+  if (deck.on) exitDecks(); else enterDecks();
+});
 
 /* --- hull strip-away ------------------------------------------------------
 
@@ -684,6 +695,9 @@ const readoutButtons = READOUTS.map((g) => {
   b.className = 'readout-btn';
   b.innerHTML = g.button;
   b.addEventListener('click', () => {
+    if (b.classList.contains('is-disabled')) { sfx.play('button-press-fail'); return; }
+    sfx.play('button-press-work');
+    sfx.play('change-view-or-display-readout');
     anno.set(g.id);
     syncReadoutButtons();
   });
@@ -694,7 +708,8 @@ const readoutButtons = READOUTS.map((g) => {
 function syncReadoutButtons() {
   const usable = !state.auto && !deck.on;
   readoutButtons.forEach((b, i) => {
-    b.disabled = !usable;
+    b.classList.toggle('is-disabled', !usable);
+    b.setAttribute('aria-disabled', String(!usable));
     b.classList.toggle('is-active', usable && anno.active === READOUTS[i].id);
   });
   if (!usable && anno.active) anno.off();
@@ -718,11 +733,43 @@ function dismissBoot() {
   if (booted) return;
   booted = true;
   boot.classList.add('gone');
+  sfx.startEngine();
   startAuto();
   showStill(state.current);
 }
 boot.addEventListener('click', dismissBoot);
 setTimeout(dismissBoot, 3000);
+
+/* --- mute -------------------------------------------------------------- */
+
+const btnMute = document.getElementById('btn-mute');
+function syncMute() {
+  btnMute.classList.toggle('is-active', sfx.muted);   // lit = currently muted
+}
+btnMute.addEventListener('click', () => {
+  sfx.toggleMuted();
+  syncMute();
+  if (!sfx.muted) sfx.play('button-press-work');   // audible confirmation only when unmuting
+});
+syncMute();
+
+/* --- non-interactive-press feedback ----------------------------------------
+
+   Anything that isn't one of the console's actual controls — decorative rail
+   filler, the ship render, empty stage, a soft-disabled readout button — gets
+   the fail sound. Real controls already play their own work/secondary sounds
+   in the handlers above, so this only needs to catch what nothing else did.
+--------------------------------------------------------------------------- */
+
+// .readout-btn is listed regardless of its disabled state: its own handler
+// already plays work/secondary or fail, so the catch-all must not double it.
+const INTERACTIVE_SELECTOR =
+  '.pill[data-view], #btn-auto, #btn-mode, #btn-decks, #btn-mute, ' +
+  '.readout-btn, .deck-tick, #deck-track, #boot';
+
+document.getElementById('console').addEventListener('click', (e) => {
+  if (!e.target.closest(INTERACTIVE_SELECTOR)) sfx.play('button-press-fail');
+});
 
 // wired last: resize() touches the deck layer, declared above
 new ResizeObserver(resize).observe(stage);

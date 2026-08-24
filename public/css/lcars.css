@@ -537,9 +537,9 @@ body.decks #specs { opacity: 0; }
   cursor: pointer;
   transition: background 90ms linear, color 90ms linear, opacity 140ms linear;
 }
-.readout-btn:hover:not(:disabled) { background: var(--rose); }
+.readout-btn:hover:not(.is-disabled) { background: var(--rose); }
 .readout-btn.is-active { background: var(--orange); }
-.readout-btn:disabled {
+.readout-btn.is-disabled {
   background: #2a2740;
   color: #5d5878;
   cursor: default;

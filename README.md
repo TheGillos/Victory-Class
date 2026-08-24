@@ -25,6 +25,9 @@ Everything published lives under `public/`. Everything else is source of record.
 - `public/css/lcars.css` — LCARS chrome, palette sampled from the reference
   sheets; design canvas is 960x540 (2x the original 1920x1080) so the whole
   console reads larger at any window size
+- `public/js/audio.js` — button and ambient sound manager: handles the
+  autoplay-block/first-gesture unlock, the boot voice sequence, and mute
+- `public/audio/` — the nine LCARS sound cues
 - `public/vendor/` — three.js r169, vendored so the site is plain static files
 - `public/refs/` — reference art and the generated crops
 - `public/refs/decks/` — the fourteen deck interiors plus `hull-outline.webp`,
@@ -68,3 +71,13 @@ consistency between what the panel says and what it draws.
 
 Not yet built: the reference key on the deck plates, and the dossier page.
 Both specified in `docs/ui-spec.md`.
+
+## Audio
+
+Nine cues: a looping ambient engine bed, work/fail feedback on every button
+press, secondary confirmation sounds for view changes, auto-survey,
+wireframe, and the deck browser, and a two-part boot voice sequence
+(accessing-library → security-accepted). Browsers block audio until the
+page has seen a user gesture, so the boot sequence is attempted immediately
+and retried on the first click or keypress anywhere if that's blocked; a
+MUTE pill in the bottom bar silences everything, including the ambient loop.
