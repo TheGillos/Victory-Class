@@ -747,6 +747,14 @@ function syncMute() {
   btnMute.classList.toggle('is-active', sfx.muted);   // lit = currently muted
 }
 btnMute.addEventListener('click', () => {
+  // The very first press of ANY button is also audio's unlock gesture, which
+  // (via the capture-phase listener in audio.js) has already made the engine
+  // audible a few statements before this handler runs. If that first press
+  // happened to land on MUTE, toggling now — starting from "unmuted" — would
+  // immediately silence the loop this same click just started. Treat that
+  // one press as the wake-up gesture only; every press after it is a normal
+  // toggle.
+  if (sfx.consumeWasUnlockGesture()) { syncMute(); return; }
   sfx.toggleMuted();
   syncMute();
   if (!sfx.muted) sfx.play('button-press-work');   // audible confirmation only when unmuting

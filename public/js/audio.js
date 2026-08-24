@@ -8,6 +8,23 @@
    lets the 3-second auto-dismiss run instead, whatever they touch first.
    The engine loop and every button sound route through the same unlock, so
    nothing needs its own gesture-handling logic.
+
+   The engine loop gets an extra trick: muted autoplay is permitted without a
+   gesture in every major browser, so once it's "wanted" (boot dismissed) it
+   starts immediately, muted, rather than sitting idle until someone clicks —
+   the loop is genuinely already running by the time the first gesture simply
+   unmutes it, instead of only starting at that point.
+
+   That same first gesture is also the one narrow case worth guarding
+   against: the global pointerdown listener below runs in the capture phase,
+   before any button's own click handler, so on the very first press of any
+   button — including MUTE — the engine has *just* been unmuted a few
+   statements earlier in the same tick. If that first press happens to be
+   MUTE, its own toggle (starting from "unmuted") would immediately silence
+   the loop that had just started. `consumeWasUnlockGesture()` lets the mute
+   button detect that this exact click was the one that woke the system up
+   and skip its own toggle for that single press — every press after that
+   behaves as a plain toggle.
    ========================================================================== */
 
 const FILES = {
@@ -30,9 +47,10 @@ const VOLUME = {
 const DEFAULT_VOLUME = 0.55;
 
 let muted = false;
-let unlocked = false;
+let audibleUnlocked = false;   // a real gesture has occurred
 let bootStarted = false;
 let bootDone = false;
+let wasUnlockGesture = false;  // one-shot: set true for the click that unlocks
 const listeners = new Set();
 
 const engine = new Audio(FILES['background-engine']);
@@ -65,26 +83,41 @@ function playBootSequence() {
     second.play().catch(() => {});
     bootDone = true;
   });
-  first.play().then(() => { unlocked = true; }).catch(() => {
+  first.play().catch(() => {
     bootStarted = false;   // autoplay was blocked; retry on the first gesture
   });
 }
 
+/** Start the loop immediately, muted — permitted without a gesture, so the
+    engine is truly already running once "wanted" rather than idle. */
+function primeEngineMuted() {
+  if (!engineWanted) return;
+  engine.muted = true;
+  engine.play().catch(() => {});
+}
+
+/** Reveal the (already-running) loop once real playback is allowed. */
+function revealEngine() {
+  if (!engineWanted || muted) return;
+  engine.muted = false;
+  engine.play().catch(() => {});
+}
+
 function unlock() {
-  if (unlocked) {
-    if (engineWanted) engine.play().catch(() => {});
-    return;
+  const isFirst = !audibleUnlocked;
+  if (isFirst) {
+    audibleUnlocked = true;
+    wasUnlockGesture = true;
+    if (!bootStarted) playBootSequence();
   }
-  unlocked = true;
-  if (!bootStarted) playBootSequence();
-  if (engineWanted) engine.play().catch(() => {});
+  revealEngine();
 }
 
 for (const evt of ['pointerdown', 'keydown']) {
   window.addEventListener(evt, unlock, { capture: true });
 }
 
-// Best-effort immediate attempt — succeeds on browsers that permit it.
+// Best-effort immediate attempts — succeed on browsers that permit it.
 playBootSequence();
 
 export const sfx = {
@@ -92,7 +125,9 @@ export const sfx = {
 
   startEngine() {
     engineWanted = true;
-    if (unlocked && !muted) engine.play().catch(() => {});
+    if (muted) return;
+    if (audibleUnlocked) revealEngine();
+    else primeEngineMuted();
   },
 
   stopEngine() {
@@ -104,14 +139,26 @@ export const sfx = {
 
   setMuted(v) {
     muted = v;
-    if (muted) engine.pause();
-    else if (engineWanted && unlocked) engine.play().catch(() => {});
+    if (muted) {
+      engine.pause();
+    } else if (engineWanted) {
+      if (audibleUnlocked) revealEngine();
+      else primeEngineMuted();
+    }
     notify();
   },
 
   toggleMuted() {
     sfx.setMuted(!muted);
     return muted;
+  },
+
+  /** True exactly once, for the click whose pointerdown just unlocked audio.
+      Consuming it clears it, so every later call reports false. */
+  consumeWasUnlockGesture() {
+    const v = wasUnlockGesture;
+    wasUnlockGesture = false;
+    return v;
   },
 
   onChange(fn) { listeners.add(fn); }
