@@ -6,8 +6,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;600;700&display=swap');
 
 :root {
-  /* 1 unit == 1px at 1920x1080. The whole console scales as one block. */
-  --s: min(calc(100vw / 1920), calc(100vh / 1080));
+  /* Design canvas is 960x540, so 1 unit is 2 physical px at 1920x1080 — the
+     whole console, text and chrome alike, reads at double the old size. */
+  --s: min(calc(100vw / 960), calc(100vh / 540));
 
   --amber:      #ffa24c;
   --gold:       #f7a640;
@@ -43,8 +44,8 @@ html, body {
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
-  width:  calc(1920 * var(--s));
-  height: calc(1080 * var(--s));
+  width:  calc(960 * var(--s));
+  height: calc(540 * var(--s));
   background: var(--ink);
   display: grid;
   grid-template-columns: var(--rail-w) 1fr;
@@ -69,9 +70,9 @@ html, body {
   align-items: flex-end;
   justify-content: flex-end;
   padding: 0 calc(9 * var(--s)) calc(5 * var(--s)) 0;
-  font-size: calc(15 * var(--s));
+  font-size: calc(10 * var(--s));
   line-height: 1;
-  letter-spacing: calc(0.4 * var(--s));
+  letter-spacing: calc(0.3 * var(--s));
   color: var(--ink);
   background: var(--lavender);
   flex: 0 0 auto;
@@ -102,6 +103,8 @@ html, body {
 #topbar {
   grid-column: 2;
   grid-row: 1;
+  min-width: 0;      /* never let content widen the track past the console */
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: calc(8 * var(--s));
@@ -109,9 +112,9 @@ html, body {
 
 #title {
   color: var(--gold);
-  font-size: calc(23 * var(--s));
+  font-size: calc(17 * var(--s));
   font-weight: 700;
-  letter-spacing: calc(0.5 * var(--s));
+  letter-spacing: calc(0.4 * var(--s));
   white-space: nowrap;
   padding-left: calc(10 * var(--s));
   flex: 0 1 auto;
@@ -157,6 +160,7 @@ html, body {
 #stage {
   grid-column: 2;
   grid-row: 2;
+  min-width: 0;
   position: relative;
   background: var(--ink);
   overflow: hidden;
@@ -168,16 +172,16 @@ html, body {
   position: absolute;
   z-index: 5;
   color: var(--amber);
-  font-size: calc(17 * var(--s));
+  font-size: calc(11 * var(--s));
   letter-spacing: calc(0.8 * var(--s));
   line-height: 1.45;
   pointer-events: none;
   text-transform: uppercase;
 }
 #view-label {
-  top: calc(14 * var(--s));
-  left: calc(16 * var(--s));
-  font-size: calc(27 * var(--s));
+  top: calc(10 * var(--s));
+  left: calc(12 * var(--s));
+  font-size: calc(17 * var(--s));
   font-weight: 700;
   color: var(--gold);
 }
@@ -204,6 +208,7 @@ html, body {
 #botbar {
   grid-column: 2;
   grid-row: 3;
+  min-width: 0;
   display: flex;
   align-items: stretch;
   gap: calc(6 * var(--s));
@@ -214,14 +219,17 @@ html, body {
   color: var(--ink);
   border: 0;
   font-family: inherit;
-  font-size: calc(17 * var(--s));
+  font-size: calc(12 * var(--s));
   font-weight: 600;
-  letter-spacing: calc(0.6 * var(--s));
+  letter-spacing: calc(0.3 * var(--s));
   text-transform: uppercase;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 0 calc(12 * var(--s)) calc(2 * var(--s)) calc(12 * var(--s));
+  padding: 0 calc(7 * var(--s)) calc(2 * var(--s)) calc(7 * var(--s));
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
   cursor: pointer;
   transition: background 90ms linear, color 90ms linear;
   white-space: nowrap;
@@ -259,11 +267,11 @@ html, body {
   transition: opacity 420ms ease;
 }
 #boot.gone { opacity: 0; pointer-events: none; }
-#boot .cls   { color: var(--salmon);  font-size: calc(23 * var(--s)); letter-spacing: calc(3 * var(--s)); }
-#boot .ttl   { color: var(--gold);    font-size: calc(52 * var(--s)); font-weight: 700; letter-spacing: calc(2 * var(--s)); }
-#boot .sub   { color: var(--lavender);font-size: calc(21 * var(--s)); letter-spacing: calc(1.6 * var(--s)); }
-#boot .auth  { color: var(--amber);   font-size: calc(19 * var(--s)); letter-spacing: calc(1.2 * var(--s)); margin-top: calc(10 * var(--s)); }
-#boot .prog  { width: calc(520 * var(--s)); height: calc(10 * var(--s)); background: #1b1726; margin-top: calc(18 * var(--s)); overflow: hidden; }
+#boot .cls   { color: var(--salmon);  font-size: calc(14 * var(--s)); letter-spacing: calc(3 * var(--s)); }
+#boot .ttl   { color: var(--gold);    font-size: calc(32 * var(--s)); font-weight: 700; letter-spacing: calc(2 * var(--s)); }
+#boot .sub   { color: var(--lavender);font-size: calc(13 * var(--s)); letter-spacing: calc(1.6 * var(--s)); }
+#boot .auth  { color: var(--amber);   font-size: calc(12 * var(--s)); letter-spacing: calc(1.2 * var(--s)); margin-top: calc(10 * var(--s)); }
+#boot .prog  { width: calc(300 * var(--s)); height: calc(10 * var(--s)); background: #1b1726; margin-top: calc(18 * var(--s)); overflow: hidden; }
 #boot .prog i{ display: block; height: 100%; width: 0; background: var(--orange); animation: fill 2.4s cubic-bezier(.5,0,.2,1) forwards; }
 @keyframes fill { to { width: 100%; } }
 
@@ -319,7 +327,17 @@ html, body {
 }
 #decks.on { opacity: 1; }
 /* shift clear of the deck rail so the plan stays centred in what is left */
-#decks.on .deck-plate { margin-left: calc(-82 * var(--s)); }
+#decks.on .deck-plate,
+#decks.on .deck-hull { margin-left: calc(-82 * var(--s)); }
+
+/* the shared hull outline sits under every deck */
+.deck-hull {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0.5;
+}
 
 .deck-plate {
   position: absolute;
@@ -333,10 +351,10 @@ html, body {
 /* right-hand deck selector */
 #deck-rail {
   position: absolute;
-  top: calc(12 * var(--s));
-  right: calc(14 * var(--s));
-  bottom: calc(12 * var(--s));
-  width: calc(150 * var(--s));
+  top: calc(10 * var(--s));
+  right: calc(10 * var(--s));
+  bottom: calc(8 * var(--s));
+  width: calc(104 * var(--s));
   display: none;
   flex-direction: column;
   gap: calc(6 * var(--s));
@@ -355,16 +373,16 @@ html, body {
 #deck-readout b {
   display: block;
   color: var(--ink);
-  font-size: calc(40 * var(--s));
+  font-size: calc(30 * var(--s));
   line-height: 0.95;
   font-weight: 700;
 }
 #deck-readout span {
   display: block;
   color: #e6e2f5;
-  font-size: calc(12.5 * var(--s));
+  font-size: calc(10 * var(--s));
   line-height: 1.1;
-  min-height: calc(41 * var(--s));
+  min-height: calc(30 * var(--s));
   letter-spacing: calc(0.4 * var(--s));
   text-transform: uppercase;
 }
@@ -384,13 +402,13 @@ html, body {
   color: var(--ink);
   border: 0;
   font-family: inherit;
-  font-size: calc(15 * var(--s));
+  font-size: calc(11 * var(--s));
   font-weight: 600;
-  letter-spacing: calc(0.4 * var(--s));
+  letter-spacing: calc(0.3 * var(--s));
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 0 calc(10 * var(--s));
+  padding: 0 calc(7 * var(--s));
   cursor: pointer;
   transition: background 90ms linear, color 90ms linear;
 }
@@ -402,7 +420,7 @@ html, body {
 .deck-hint {
   flex: 0 0 auto;
   color: var(--periwinkle);
-  font-size: calc(12 * var(--s));
+  font-size: calc(8 * var(--s));
   letter-spacing: calc(0.8 * var(--s));
   text-align: right;
   padding-top: calc(2 * var(--s));
@@ -415,14 +433,14 @@ body.decks #specs { opacity: 0; }
 
 /* --- annotation overlay ---------------------------------------------------- */
 
-#anno-svg {
+.anno-svg {
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 6;
   overflow: visible;
 }
-#anno-boxes {
+.anno-boxes {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -510,11 +528,11 @@ body.decks #specs { opacity: 0; }
   color: var(--ink);
   border: 0;
   font-family: inherit;
-  font-size: calc(14 * var(--s));
+  font-size: calc(11 * var(--s));
   font-weight: 600;
-  letter-spacing: calc(0.4 * var(--s));
+  letter-spacing: calc(0.3 * var(--s));
   text-transform: uppercase;
-  padding: 0 calc(10 * var(--s)) calc(2 * var(--s));
+  padding: 0 calc(7 * var(--s)) calc(2 * var(--s));
   white-space: nowrap;
   cursor: pointer;
   transition: background 90ms linear, color 90ms linear, opacity 140ms linear;
@@ -525,4 +543,21 @@ body.decks #specs { opacity: 0; }
   background: #2a2740;
   color: #5d5878;
   cursor: default;
+}
+
+#boot .ver {
+  color: var(--periwinkle);
+  font-size: calc(10 * var(--s));
+  letter-spacing: calc(1.4 * var(--s));
+  margin-top: calc(4 * var(--s));
+}
+
+/* exterior hull being stripped away on entering the deck browser */
+.deck-dissolve {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 4;
 }

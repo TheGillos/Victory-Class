@@ -7,6 +7,8 @@ import * as THREE from '../vendor/three.module.min.js';
 import { buildVictory, SHIP } from './victory-model.js';
 import { HULL } from './hull-data.js';
 import { createAnnotations } from './annotate.js';
+import { READOUTS } from './annotations.js';
+import { DECKS, ZONE_U } from './deck-data.js';
 
 /* --- view stations -------------------------------------------------------- */
 /* dir = unit vector from the ship toward the camera; up orients the screen.  */
@@ -35,6 +37,11 @@ const TRANSITION_MS = 1100;
 /* --- scene ---------------------------------------------------------------- */
 
 const stage    = document.getElementById('stage');
+
+/** One design unit in physical pixels — the whole console scales off this. */
+const unitPx = () => parseFloat(getComputedStyle(document.documentElement)
+  .getPropertyValue('--s')) || (stage.clientWidth / 833);
+
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setClearColor(0x000000, 1);
@@ -138,6 +145,8 @@ function stopAuto() {
   state.auto = false;
   document.getElementById('btn-auto').classList.remove('is-active');
   setScan(false);
+  syncReadoutButtons();
+  if (!anno.active) anno.set('hull');
   syncReadoutButtons();
 }
 
@@ -289,6 +298,7 @@ function frame(now) {
       if (state.auto) state.holdUntil = now + HOLD_MS;
       showStill(state.current);
       anno.refresh();
+      if (deck.entering && state.current === 'top') startDissolve();
     }
   } else if (state.auto && now >= state.holdUntil) {
     state.seqIndex = (state.seqIndex + 1) % SEQUENCE.length;
@@ -338,7 +348,17 @@ const deckRail = document.getElementById('deck-rail');
 const deckTrack = document.getElementById('deck-track');
 const btnDecks = document.getElementById('btn-decks');
 
-const deck = { on: false, pos: 1, target: 1, frame: 1.25, plates: [], ticks: [] };
+const deck = { on: false, entering: false, shown: 0, pos: 1, target: 1,
+               frame: 1.25, plates: [], ticks: [] };
+
+/* The outline is its own layer in the source art, so it stays put while the
+   interiors cross-fade over it — nothing to register per deck. */
+const deckHull = document.createElement('img');
+deckHull.className = 'deck-hull';
+deckHull.alt = '';
+deckHull.src = 'refs/decks/hull-outline.webp';
+deckHull.addEventListener('load', layoutDecks);
+deckLayer.appendChild(deckHull);
 
 for (let i = 1; i <= DECK_NAMES.length; i++) {
   const img = document.createElement('img');
@@ -358,6 +378,39 @@ for (let i = 1; i <= DECK_NAMES.length; i++) {
   deck.ticks.push(tick);
 }
 
+/* Deck contents reuse the systems overlay, resolved from the zone tags in
+   deck-data.js. Items in the same zone fan out vertically so their pins do not
+   stack on one point. */
+const deckAnno = createAnnotations({
+  id: 'deck-anno',
+  stage,
+  getRect: () => hullRect('top'),
+  getItems: () => {
+    if (!deck.on || deck.entering) return [];
+    const d = DECKS[Math.min(13, Math.max(0, Math.round(deck.pos) - 1))];
+    if (!d) return [];
+    const perZone = {};
+    for (const it of d.items) (perZone[it.zone] = perZone[it.zone] || []).push(it);
+    const out = [];
+    for (const [zone, list] of Object.entries(perZone)) {
+      list.forEach((it, k) => {
+        const spread = (list.length - 1) / 2;
+        out.push({
+          label: it.label,
+          lines: it.lines,
+          u: ZONE_U[zone] ?? 0.5,
+          v: 0.5 + (k - spread) * 0.26
+        });
+      });
+    }
+    return out;
+  },
+  isEnabled: () => deck.on && !deck.entering,
+  unit: unitPx,
+  // keep captions clear of the deck selector down the right-hand edge
+  inset: () => ({ left: 0, right: (deckRail.offsetWidth || 0) + 16 * unitPx() })
+});
+
 fetch('refs/decks/registration.json')
   .then((r) => r.json())
   .then((j) => { if (j.hullFraction) { deck.frame = 1 / j.hullFraction; layoutDecks(); } })
@@ -369,7 +422,7 @@ function layoutDecks() {
   if (!w || !deck.plates.length) return;
   const visW = 2 * RADIUS * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect;
   const px = (SHIP.length / visW) * w * deck.frame;
-  for (const img of deck.plates) {
+  for (const img of [deckHull, ...deck.plates]) {
     if (!img.naturalWidth) continue;
     img.style.width = px + 'px';
     img.style.height = (px * img.naturalHeight / img.naturalWidth) + 'px';
@@ -389,6 +442,10 @@ function paintDecks() {
     img.style.visibility = o > 0.002 ? 'visible' : 'hidden';
   }
   const nearest = Math.min(n, Math.max(1, Math.round(deck.pos)));
+  if (nearest !== deck.shown) {
+    deck.shown = nearest;
+    deckAnno.refresh();
+  }
   document.getElementById('deck-no').textContent = String(nearest).padStart(2, '0');
   document.getElementById('deck-name').textContent = DECK_NAMES[nearest - 1];
   setViewLabel('top', `DECK ${String(nearest).padStart(2, '0')}`);
@@ -400,23 +457,27 @@ function paintDecks() {
 
 function enterDecks() {
   deck.on = true;
-  stopAuto();
+  deck.entering = true;
+  deck.target = 1;
+  deck.pos = 1;
+  deck.shown = 0;
+  anno.off();
   hideStills();
-  goTo('top');
-  ship.visible = false;
-  deckLayer.classList.add('on');
+  goTo('top');            // fly in from wherever the survey was
   deckRail.classList.add('on');
   document.body.classList.add('decks');
   btnDecks.classList.add('is-active');
   btnDecks.textContent = 'EXIT DECKS';
   syncReadoutButtons();
-  layoutDecks();
   paintDecks();
   setScan(false);
 }
 
 function exitDecks() {
   deck.on = false;
+  deck.entering = false;
+  deckAnno.clear();
+  stopDissolve();
   deckLayer.classList.remove('on');
   deckRail.classList.remove('on');
   document.body.classList.remove('decks');
@@ -424,11 +485,113 @@ function exitDecks() {
   btnDecks.textContent = 'EXPLORE DECKS';
   ship.visible = true;
   showStill(state.current);
+  if (!anno.active) anno.set('hull');
   syncReadoutButtons();
   anno.refresh();
 }
 
 btnDecks.addEventListener('click', () => (deck.on ? exitDecks() : enterDecks()));
+
+/* --- hull strip-away ------------------------------------------------------
+
+   Entering the deck browser, the exterior render is drawn onto a canvas over
+   the deck plate and then erased triangle by triangle, so the hull comes off
+   in plates rather than fading as a whole. The order is shuffled once so it
+   reads as panels being pulled rather than a wipe.
+--------------------------------------------------------------------------- */
+
+const dissolve = { canvas: null, raf: 0, cells: [], i: 0 };
+
+function stopDissolve() {
+  if (dissolve.raf) cancelAnimationFrame(dissolve.raf);
+  dissolve.raf = 0;
+  if (dissolve.canvas) dissolve.canvas.remove();
+  dissolve.canvas = null;
+}
+
+function startDissolve() {
+  stopDissolve();
+  const img = stills.find((s) => s.dataset.view === 'top' || s.src.includes('still-dorsal'));
+  const plate = deck.plates[0];
+  if (!img || !img.naturalWidth || !plate || !plate.naturalWidth) {
+    finishDissolve();
+    return;
+  }
+
+  layoutDecks();
+  deckLayer.classList.add('on');
+  ship.visible = false;
+  hideStills();
+
+  const w = parseFloat(plate.style.width) || plate.clientWidth;
+  const h = parseFloat(plate.style.height) || plate.clientHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  const c = document.createElement('canvas');
+  c.className = 'deck-dissolve';
+  c.width = Math.round(w * dpr);
+  c.height = Math.round(h * dpr);
+  c.style.width = w + 'px';
+  c.style.height = h + 'px';
+  c.style.marginLeft = getComputedStyle(plate).marginLeft;
+  stage.appendChild(c);
+  dissolve.canvas = c;
+
+  // the plate frame is padded around the hull; the still is the hull alone
+  const g = c.getContext('2d');
+  const hullW = w / deck.frame;
+  const hullH = hullW * (img.naturalHeight / img.naturalWidth);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.drawImage(img, (w - hullW) / 2, (h - hullH) / 2, hullW, hullH);
+
+  // triangulate the frame and shuffle, so plates come away out of order
+  const COLS = 26, ROWS = 16;
+  const cells = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let col = 0; col < COLS; col++) {
+      const x0 = col * w / COLS, x1 = (col + 1) * w / COLS;
+      const y0 = r * h / ROWS, y1 = (r + 1) * h / ROWS;
+      cells.push([[x0, y0], [x1, y0], [x0, y1]]);
+      cells.push([[x1, y0], [x1, y1], [x0, y1]]);
+    }
+  }
+  for (let i = cells.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cells[i], cells[j]] = [cells[j], cells[i]];
+  }
+  dissolve.cells = cells;
+  dissolve.i = 0;
+
+  g.globalCompositeOperation = 'destination-out';
+  const PER_FRAME = Math.ceil(cells.length / 78);   // ~1.3 s at 60fps
+
+  const step = () => {
+    const gg = dissolve.canvas && dissolve.canvas.getContext('2d');
+    if (!gg) return;
+    for (let k = 0; k < PER_FRAME && dissolve.i < cells.length; k++, dissolve.i++) {
+      const t = cells[dissolve.i];
+      gg.beginPath();
+      gg.moveTo(t[0][0], t[0][1]);
+      gg.lineTo(t[1][0], t[1][1]);
+      gg.lineTo(t[2][0], t[2][1]);
+      gg.closePath();
+      gg.fill();
+    }
+    if (dissolve.i < cells.length) dissolve.raf = requestAnimationFrame(step);
+    else finishDissolve();
+  };
+  dissolve.raf = requestAnimationFrame(step);
+}
+
+function finishDissolve() {
+  stopDissolve();
+  deck.entering = false;
+  deckLayer.classList.add('on');
+  ship.visible = false;
+  layoutDecks();
+  paintDecks();
+  deckAnno.refresh();
+}
 
 function nudgeDeck(d) {
   deck.target = Math.min(DECK_NAMES.length, Math.max(1, Math.round(deck.target) + d));
@@ -493,17 +656,30 @@ function hullRect(view) {
 
 const annoEnabled = () => !state.auto && !deck.on && state.t >= 1;
 
+let activeReadout = null;
+
 const anno = createAnnotations({
+  id: 'anno',
   stage,
-  getRect: hullRect,
-  getView: () => state.current,
+  getRect: () => hullRect(state.current),
+  getItems: () => {
+    const g = READOUTS.find((r) => r.id === activeReadout);
+    if (!g) return [];
+    return g.items
+      .filter((it) => it.at[state.current])
+      .map((it) => ({ label: it.label, lines: it.lines,
+                      u: it.at[state.current][0], v: it.at[state.current][1] }));
+  },
   isEnabled: annoEnabled,
-  unit: () => parseFloat(getComputedStyle(document.documentElement)
-    .getPropertyValue('--s')) || (stage.clientWidth / 1778)
+  unit: unitPx
 });
 
+anno.set = (id) => { activeReadout = (activeReadout === id) ? null : id; anno.refresh(); return activeReadout; };
+anno.off = () => { activeReadout = null; anno.clear(); };
+Object.defineProperty(anno, 'active', { get: () => activeReadout });
+
 const readoutBar = document.getElementById('readout-buttons');
-const readoutButtons = anno.groups.map((g) => {
+const readoutButtons = READOUTS.map((g) => {
   const b = document.createElement('button');
   b.className = 'readout-btn';
   b.innerHTML = g.button;
@@ -519,7 +695,7 @@ function syncReadoutButtons() {
   const usable = !state.auto && !deck.on;
   readoutButtons.forEach((b, i) => {
     b.disabled = !usable;
-    b.classList.toggle('is-active', usable && anno.active === anno.groups[i].id);
+    b.classList.toggle('is-active', usable && anno.active === READOUTS[i].id);
   });
   if (!usable && anno.active) anno.off();
 }

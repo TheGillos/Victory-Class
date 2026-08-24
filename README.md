@@ -15,20 +15,29 @@ Everything published lives under `public/`. Everything else is source of record.
   triplanarly from the reference views (bow +X, dorsal +Y, starboard +Z)
 - `public/js/hull-data.js` — generated reference measurements; do not hand-edit
 - `public/js/app.js` — survey sequence, view stations, still handoff, decks
-- `public/js/annotations.js` — readout groups and their per-view anchors
-- `public/js/annotate.js` — the annotation overlay: pins, leaders, captions
-- `public/css/lcars.css` — LCARS chrome, palette sampled from the reference sheets
+- `public/js/annotations.js` — the four systems-readout groups and their
+  per-view anchors
+- `public/js/deck-data.js` — per-deck contents transcribed from
+  `docs/deck-plan.md`, tagged fwd/mid/aft rather than pinned to exact
+  coordinates, since the source text doesn't support finer placement
+- `public/js/annotate.js` — the annotation overlay shared by both readout
+  systems: pins, leaders, captions, column balancing, overlap-safe stacking
+- `public/css/lcars.css` — LCARS chrome, palette sampled from the reference
+  sheets; design canvas is 960x540 (2x the original 1920x1080) so the whole
+  console reads larger at any window size
 - `public/vendor/` — three.js r169, vendored so the site is plain static files
 - `public/refs/` — reference art and the generated crops
-- `public/refs/decks/` — the fourteen deck plates, registered onto the hull's
-  plan silhouette and stored as opaque WebP (2 MB for all fourteen; the same
-  plates with an alpha channel came to 25 MB as PNG)
-- `refs-src/decks/` — the deck renders as delivered, before registration
+- `public/refs/decks/` — the fourteen deck interiors plus `hull-outline.webp`,
+  a shared silhouette layer common to all of them, stored as opaque WebP
+- `refs-src/decks-v2/` — the deck renders and the hull-outline layer as
+  delivered, before registration
 - `tools/extract-hull.py` — measures the hull off the reference views and
   regenerates `hull-data.js` and the texture crops. Run from the repo root
   after changing the art.
-- `tools/register-decks.py` — fits each deck render onto the hull's plan
-  silhouette by maximising overlap, so the ship holds still while scrubbing
+- `tools/register-decks.py` — centres the shared frame on the hull outline and
+  matches its proportions to the exterior top view. Because the outline layer
+  is common to every deck, one transform serves all fourteen — there is
+  nothing left to drift between them.
 - `tools/clean-hull.py` — strips detached geometry from a scanned hull
 - `docs/deck-plan.md` — deck-by-deck layout
 - `docs/ui-spec.md` — screen layout and interaction spec
@@ -48,10 +57,14 @@ Cloudflare, deploy command `npx wrangler deploy`. `wrangler.jsonc` declares
 
 ## Status
 
-Working: the auto-rotating survey across five stations with beauty-still
-handoff, a schematic wireframe mode, the deck browser (fourteen registered
-plates with a continuous slider that settles on a deck), and four annotation
-readouts that pin systems to hardware in whichever station is showing.
+Version 1.0. Working: the auto-rotating survey across five stations with
+beauty-still handoff, a schematic wireframe mode, four systems readouts that
+pin hardware to whichever station is showing, and the deck browser — a
+continuous slider over fourteen registered plates, each with its own
+animated callouts transcribed from the deck plan, entered via a triangle-by
+-triangle strip-away of the exterior hull. Dimensions (455 x 304 x 101 m)
+are derived from the reference art rather than the original spec text, for
+consistency between what the panel says and what it draws.
 
-Not yet built: per-deck callouts and the reference key, and the dossier.
+Not yet built: the reference key on the deck plates, and the dossier page.
 Both specified in `docs/ui-spec.md`.

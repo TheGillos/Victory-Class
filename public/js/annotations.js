@@ -15,7 +15,7 @@
 export const READOUTS = [
   {
     id: 'hull',
-    button: 'HULL &amp; STRUCTURE',
+    button: 'HULL',
     title: 'HULL DATA & STRUCTURE',
     items: [
       { label: 'CLASSIFICATION',
@@ -24,7 +24,7 @@ export const READOUTS = [
               aft: [0.50, 0.14], ventral: [0.60, 0.50] } },
 
       { label: 'DIMENSIONS',
-        lines: ['Length 455 m · Beam 280 m', '14 decks, compressed profile'],
+        lines: ['Length 455 m · Beam 304 m', 'Height 101 m · 14 decks'],
         at: { top: [0.30, 0.14], starboard: [0.20, 0.30], forward: [0.10, 0.50],
               aft: [0.08, 0.50], ventral: [0.30, 0.86] } },
 
@@ -131,7 +131,7 @@ export const READOUTS = [
 
   {
     id: 'additional',
-    button: 'ADDITIONAL SYSTEMS',
+    button: 'SYSTEMS',
     title: 'DEFENSE · CREW · COMPUTER',
     items: [
       { label: 'METAPHASIC SHIELDS',
